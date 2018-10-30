@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["Wire <opensource@wire.com>"]
 
 [dependencies]
+reqwest = "0.9.*"
+rhai = "0.9.*"
