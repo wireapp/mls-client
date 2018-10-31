@@ -8,6 +8,12 @@ reqwest = "0.9.4"
 serde = "1.0"
 serde_derive = "1.0"
 rustyline = "2.1"
+names = "0.11.0"
+
+# The underlying MLS algorithm implementation
+[dependencies.melissa]
+git = "https://github.com/wireapp/melissa"
+rev = "5111fbb986b225cd1dfc26cd41e21ba2978eadfc"
 
 # Using a fork that:
 #

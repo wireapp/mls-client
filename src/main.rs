@@ -5,6 +5,8 @@ mod state;
 #[macro_use]
 extern crate serde_derive;
 
+extern crate melissa;
+extern crate names;
 extern crate reqwest;
 extern crate rhai;
 extern crate rustyline;
@@ -12,7 +14,6 @@ extern crate serde;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -29,9 +30,10 @@ fn main() {
     let mut engine = rhai::Engine::new();
     let mut scope = rhai::Scope::new();
 
-    // Groups that we're subscribed to
-    let state: Arc<Mutex<HashMap<String, GroupState>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    // Local state
+    let name = names::Generator::default().next().unwrap();
+    let state: Arc<Mutex<State>> =
+        Arc::new(Mutex::new(State::new(name.as_str())));
 
     // Set up polling
     let c = client.clone();
@@ -41,10 +43,11 @@ fn main() {
         thread::sleep(Duration::from_secs(1));
     });
 
+    // Prepare the REPL
     register_types(&mut engine);
     register_functions(&client, state.clone(), &mut engine);
 
-    // REPL
+    // Start the REPL
     let mut rl = Editor::<()>::new();
     loop {
         let readline = rl.readline("> ");
@@ -85,12 +88,9 @@ fn process_message(
 }
 
 /// Poll for messages in subscribed groups.
-fn poll(
-    client: &reqwest::Client,
-    state: Arc<Mutex<HashMap<String, GroupState>>>,
-) {
+fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
     let mut state = state.lock().unwrap();
-    for (group_id, group_state) in state.iter_mut() {
+    for (group_id, group_state) in state.groups.iter_mut() {
         let blobs =
             get_blobs(client, group_id, Some(group_state.next_blob), None)
                 .unwrap();

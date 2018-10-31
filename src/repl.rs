@@ -2,7 +2,6 @@ extern crate reqwest;
 
 use rhai::*;
 use std::collections::hash_map;
-use std::collections::HashMap;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
@@ -19,7 +18,7 @@ pub fn register_types(engine: &mut Engine) {
 
 pub fn register_functions(
     client: &reqwest::Client,
-    state: Arc<Mutex<HashMap<String, GroupState>>>,
+    state: Arc<Mutex<State>>,
     engine: &mut Engine,
 ) {
     // Create a blob:
@@ -91,7 +90,7 @@ pub fn register_functions(
         "subscribe",
         move |group_id: String| -> RhaiResult<()> {
             let mut state = state.lock().unwrap();
-            match state.entry(group_id) {
+            match state.groups.entry(group_id) {
                 hash_map::Entry::Occupied(_) => {
                     println!("Already subscribed!");
                 }
