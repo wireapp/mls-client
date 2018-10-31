@@ -19,6 +19,8 @@ recv_from("group_name", index)
 recv_to("group_name", index)
 recv_from_to("group_name", from_index, to_index)
 
+subscribe("group_name")
+
 quit()
 ```
 

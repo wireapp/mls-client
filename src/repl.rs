@@ -1,9 +1,13 @@
 extern crate reqwest;
 
 use rhai::*;
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::process::exit;
+use std::sync::{Arc, Mutex};
 
 use client::*;
+use state::*;
 
 pub fn register_types(engine: &mut Engine) {
     // All return types HAVE to be registered here, or else exception
@@ -13,7 +17,11 @@ pub fn register_types(engine: &mut Engine) {
     engine.register_type::<Vec<Blob>>();
 }
 
-pub fn register_functions(client: &reqwest::Client, engine: &mut Engine) {
+pub fn register_functions(
+    client: &reqwest::Client,
+    state: Arc<Mutex<HashMap<String, GroupState>>>,
+    engine: &mut Engine,
+) {
     // Create a blob:
     //
     // blob(index, content) -> Blob
@@ -21,7 +29,8 @@ pub fn register_functions(client: &reqwest::Client, engine: &mut Engine) {
         Blob { index, content }
     });
 
-    // Post a blob:
+    // Post a blob without adding it to the group state (though it will be
+    // added anyway when doing polling):
     //
     // send(group_id, blob)
     let c = client.clone();
@@ -33,7 +42,7 @@ pub fn register_functions(client: &reqwest::Client, engine: &mut Engine) {
         },
     );
 
-    // Fetch all blobs:
+    // Fetch all blobs without adding them to the group state:
     //
     // recv(group_id) -> Vec<Blob>
     // recv_from(group_id, from_index) -> Vec<Blob>
@@ -74,6 +83,26 @@ pub fn register_functions(client: &reqwest::Client, engine: &mut Engine) {
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
+
+    // Subscribe to a group
+    //
+    // subscribe(group_id)
+    engine.register_fn(
+        "subscribe",
+        move |group_id: String| -> RhaiResult<()> {
+            let mut state = state.lock().unwrap();
+            match state.entry(group_id) {
+                hash_map::Entry::Occupied(_) => {
+                    println!("Already subscribed!");
+                }
+                hash_map::Entry::Vacant(slot) => {
+                    slot.insert(GroupState { next_blob: 0 });
+                }
+            }
+            Ok(())
+        },
+    );
+
     // Quit the program:
     //
     // quit()
