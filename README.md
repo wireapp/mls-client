@@ -16,7 +16,7 @@ send("group_name", blob(index, "content"))
 
 recv("group_name")
 
-exit()
+quit()
 ```
 
 The language also supports variables and iteration. See
