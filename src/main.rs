@@ -34,6 +34,7 @@ fn main() {
     let name = names::Generator::default().next().unwrap();
     let state: Arc<Mutex<State>> =
         Arc::new(Mutex::new(State::new(name.as_str())));
+    println!("\nCreated new user '{}' and generated keys\n", name);
 
     // Set up polling
     let c = client.clone();

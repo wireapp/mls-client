@@ -6,7 +6,10 @@ pub struct GroupState {
     /// Blob index after the last one we've seen. (Would be 0 if no blobs
     /// were received at all, for instance.)
     pub next_blob: i64,
+
     /// The cryptographic state, if we're in the group.
+    ///
+    /// Note that the cryptographic group ID will be random.
     pub crypto: Option<group::Group>,
 }
 

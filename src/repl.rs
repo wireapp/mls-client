@@ -1,5 +1,6 @@
 extern crate reqwest;
 
+use melissa::group;
 use rhai::*;
 use std::collections::hash_map;
 use std::process::exit;
@@ -88,10 +89,11 @@ pub fn register_functions(
     // usefully interpret them).
     //
     // subscribe(group_id)
+    let s = state.clone();
     engine.register_fn(
         "subscribe",
         move |group_id: String| -> RhaiResult<()> {
-            let mut state = state.lock().unwrap();
+            let mut state = s.lock().unwrap();
             match state.groups.entry(group_id) {
                 hash_map::Entry::Occupied(_) => {
                     println!("Already subscribed!");
@@ -100,6 +102,36 @@ pub fn register_functions(
                     slot.insert(GroupState {
                         next_blob: 0,
                         crypto: None,
+                    });
+                }
+            }
+            Ok(())
+        },
+    );
+
+    // Create a group.
+    //
+    // create_group(group_id)
+    let s = state.clone();
+    engine.register_fn(
+        "create_group",
+        move |group_id: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            let identity = state.identity.clone();
+            let credential = state.credential.clone();
+            match state.groups.entry(group_id) {
+                hash_map::Entry::Occupied(_) => {
+                    println!("Group already exists!");
+                }
+                hash_map::Entry::Vacant(slot) => {
+                    let group_crypto = group::Group::new(
+                        identity,
+                        credential,
+                        group::GroupId::random(),
+                    );
+                    slot.insert(GroupState {
+                        next_blob: 0,
+                        crypto: Some(group_crypto),
                     });
                 }
             }
