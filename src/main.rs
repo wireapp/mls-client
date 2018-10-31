@@ -34,11 +34,11 @@ fn main() {
     //
     // send(group_id, blob)
     {
-        let client_ = client.clone();
+        let client = client.clone();
         engine.register_fn(
             "send",
             move |group_id: String, blob: Blob| -> RhaiResult<()> {
-                append_blob(&client_, group_id.as_str(), &blob)
+                append_blob(&client, group_id.as_str(), &blob)
                     .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
             },
         );
@@ -48,11 +48,11 @@ fn main() {
     //
     // recv(group_id) -> Vec<Blob>
     {
-        let client_ = client.clone();
+        let client = client.clone();
         engine.register_fn(
             "recv",
             move |group_id: String| -> RhaiResult<Vec<Blob>> {
-                get_blobs(&client_, group_id.as_str(), None, None)
+                get_blobs(&client, group_id.as_str(), None, None)
                     .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
             },
         );
