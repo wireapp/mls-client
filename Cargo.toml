@@ -4,5 +4,14 @@ version = "0.1.0"
 authors = ["Wire <opensource@wire.com>"]
 
 [dependencies]
-reqwest = "0.9.*"
-rhai = "0.9.*"
+reqwest = "0.9"
+serde = "1"
+serde_derive = "1"
+
+# Using a fork that:
+#
+#   * allows exceptions
+#   * allows printing result values
+[dependencies.rhai]
+git = "https://github.com/neongreen/rhai"
+rev = "d2b2ba994d5054db2b8e207dbb95b6acec2e993c"

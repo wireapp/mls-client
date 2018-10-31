@@ -1,35 +1,120 @@
-extern crate rhai;
+#[macro_use]
+extern crate serde_derive;
 
-use rhai::{Engine, RegisterFn, Scope};
-use std::io::*;
+extern crate reqwest;
+extern crate rhai;
+extern crate serde;
+
+use rhai::{EvalAltResult, RegisterFn, RhaiResult};
+use std::io::{stdin, stdout, Write};
+use std::process::exit;
 
 fn main() {
-    let mut engine = Engine::new();
-    let mut scope = Scope::new();
+    let client = reqwest::Client::new();
 
-    engine.register_fn("send", append_blob);
-    engine.register_fn("recv", get_blobs);
+    let mut engine = rhai::Engine::new();
+    let mut scope = rhai::Scope::new();
+
+    // All return types HAVE to be registered here, or else exception
+    // handling won't work.
+    engine.register_type::<()>();
+    engine.register_type::<Blob>();
+    engine.register_type::<Vec<Blob>>();
+
+    // Create a blob:
+    //
+    // blob(index, content) -> Blob
+    {
+        engine.register_fn("blob", |index: i64, content: String| -> Blob {
+            Blob { index, content }
+        });
+    }
+
+    // Post a blob:
+    //
+    // send(group_id, blob)
+    {
+        let client_ = client.clone();
+        engine.register_fn(
+            "send",
+            move |group_id: String, blob: Blob| -> RhaiResult<()> {
+                append_blob(&client_, group_id.as_str(), &blob)
+                    .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+            },
+        );
+    }
+
+    // Fetch all blobs:
+    //
+    // recv(group_id) -> Vec<Blob>
+    {
+        let client_ = client.clone();
+        engine.register_fn(
+            "recv",
+            move |group_id: String| -> RhaiResult<Vec<Blob>> {
+                get_blobs(&client_, group_id.as_str())
+                    .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+            },
+        );
+    }
+
+    // Quit the program:
+    //
+    // quit()
+    {
+        engine.register_fn("quit", || {
+            exit(0);
+        });
+    }
 
     loop {
         print!("> ");
         let mut input = String::new();
-        stdout().flush().expect("couldn't flush stdout");
+        stdout().flush().expect("Couldn't flush stdout");
         if let Err(e) = stdin().read_line(&mut input) {
-            println!("input error: {}", e);
+            println!("Input error: {}", e);
         }
 
-        if let Err(e) = engine.consume_with_scope(&mut scope, &input) {
-            println!("error: {}", e);
+        match engine.eval_with_scope_boxed(&mut scope, &input) {
+            Err(e) => println!("Error: {}", e),
+            Ok(x) => println!("{:#?}", x),
         }
     }
 }
 
+/// A blob, intended to be stored by the server. We can put any JSON we want
+/// into blobs.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct Blob {
+    index: i64,
+    content: String, // should be JSON
+}
+
 /// Store a blob for a specific group.
-pub fn append_blob(group_id: String, blob: String) {
-    println!("{} <>= {}", group_id, blob)
+fn append_blob(
+    client: &reqwest::Client,
+    group_id: &str,
+    blob: &Blob,
+) -> reqwest::Result<()> {
+    client
+        .post(
+            format!("http://localhost:10100/groups/{}/blobs", group_id)
+                .as_str(),
+        ).json(blob)
+        .send()?
+        .error_for_status()
+        .map(|_| ())
 }
 
 /// Receive all blobs for a specific groups.
-pub fn get_blobs(group_id: String) {
-    println!("{}...", group_id)
+fn get_blobs(
+    client: &reqwest::Client,
+    group_id: &str,
+) -> reqwest::Result<Vec<Blob>> {
+    client
+        .get(
+            format!("http://localhost:10100/groups/{}/blobs", group_id)
+                .as_str(),
+        ).send()?
+        .json()
 }
