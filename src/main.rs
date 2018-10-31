@@ -52,7 +52,7 @@ fn main() {
         engine.register_fn(
             "recv",
             move |group_id: String| -> RhaiResult<Vec<Blob>> {
-                get_blobs(&client_, group_id.as_str())
+                get_blobs(&client_, group_id.as_str(), None, None)
                     .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
             },
         );
@@ -110,11 +110,18 @@ fn append_blob(
 fn get_blobs(
     client: &reqwest::Client,
     group_id: &str,
+    from: Option<i64>,
+    to: Option<i64>,
 ) -> reqwest::Result<Vec<Blob>> {
-    client
-        .get(
-            format!("http://localhost:10100/groups/{}/blobs", group_id)
-                .as_str(),
-        ).send()?
-        .json()
+    let mut req = client.get(
+        format!("http://localhost:10100/groups/{}/blobs", group_id)
+            .as_str(),
+    );
+    if let Some(x) = from {
+        req = req.query(&[("from", x)])
+    };
+    if let Some(x) = to {
+        req = req.query(&[("to", x)])
+    };
+    req.send()?.json()
 }
