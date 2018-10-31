@@ -83,7 +83,9 @@ pub fn register_functions(
         },
     );
 
-    // Subscribe to a group
+    // Subscribe to a group. This is possible even if the user does not
+    // belong to the group (they can spy on group operations but they can't
+    // usefully interpret them).
     //
     // subscribe(group_id)
     engine.register_fn(
@@ -95,7 +97,10 @@ pub fn register_functions(
                     println!("Already subscribed!");
                 }
                 hash_map::Entry::Vacant(slot) => {
-                    slot.insert(GroupState { next_blob: 0 });
+                    slot.insert(GroupState {
+                        next_blob: 0,
+                        crypto: None,
+                    });
                 }
             }
             Ok(())

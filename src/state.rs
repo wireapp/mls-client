@@ -1,11 +1,13 @@
-use melissa::keys;
+use melissa::{group, keys};
 use std::collections::HashMap;
 
 /// Group-related state that we track
 pub struct GroupState {
-    /// The blob after the last one we've seen. (Would be 0 if no blobs were
-    /// received at all, for instance.)
+    /// Blob index after the last one we've seen. (Would be 0 if no blobs
+    /// were received at all, for instance.)
     pub next_blob: i64,
+    /// The cryptographic state, if we're in the group.
+    pub crypto: Option<group::Group>,
 }
 
 /// All state that we track
