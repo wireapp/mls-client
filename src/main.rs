@@ -24,48 +24,40 @@ fn main() {
     // Create a blob:
     //
     // blob(index, content) -> Blob
-    {
-        engine.register_fn("blob", |index: i64, content: String| -> Blob {
-            Blob { index, content }
-        });
-    }
+    engine.register_fn("blob", |index: i64, content: String| -> Blob {
+        Blob { index, content }
+    });
 
     // Post a blob:
     //
     // send(group_id, blob)
-    {
-        let client = client.clone();
-        engine.register_fn(
-            "send",
-            move |group_id: String, blob: Blob| -> RhaiResult<()> {
-                append_blob(&client, group_id.as_str(), &blob)
-                    .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-            },
-        );
-    }
+    let c = client.clone();
+    engine.register_fn(
+        "send",
+        move |group_id: String, blob: Blob| -> RhaiResult<()> {
+            append_blob(&c, group_id.as_str(), &blob)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
 
     // Fetch all blobs:
     //
     // recv(group_id) -> Vec<Blob>
-    {
-        let client = client.clone();
-        engine.register_fn(
-            "recv",
-            move |group_id: String| -> RhaiResult<Vec<Blob>> {
-                get_blobs(&client, group_id.as_str(), None, None)
-                    .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-            },
-        );
-    }
+    let c = client.clone();
+    engine.register_fn(
+        "recv",
+        move |group_id: String| -> RhaiResult<Vec<Blob>> {
+            get_blobs(&c, group_id.as_str(), None, None)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
 
     // Quit the program:
     //
     // quit()
-    {
-        engine.register_fn("quit", || {
-            exit(0);
-        });
-    }
+    engine.register_fn("quit", || {
+        exit(0);
+    });
 
     loop {
         print!("> ");
