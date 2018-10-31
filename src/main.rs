@@ -7,10 +7,12 @@ extern crate serde_derive;
 
 extern crate reqwest;
 extern crate rhai;
+extern crate rustyline;
 extern crate serde;
 
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::collections::HashMap;
-use std::io::{stdin, stdout, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -42,17 +44,28 @@ fn main() {
     register_types(&mut engine);
     register_functions(&client, state.clone(), &mut engine);
 
+    // REPL
+    let mut rl = Editor::<()>::new();
     loop {
-        print!("> ");
-        let mut input = String::new();
-        stdout().flush().expect("Couldn't flush stdout");
-        if let Err(e) = stdin().read_line(&mut input) {
-            println!("Input error: {}", e);
-        }
-
-        match engine.eval_with_scope_boxed(&mut scope, &input) {
-            Err(e) => println!("Error: {}", e),
-            Ok(x) => println!("{:#?}", x),
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_ref());
+                match engine.eval_with_scope_boxed(&mut scope, &line) {
+                    Err(e) => println!("Error: {}", e),
+                    Ok(x) => println!("{:#?}", x),
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
         }
     }
 }
