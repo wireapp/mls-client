@@ -43,11 +43,41 @@ fn main() {
     // Fetch all blobs:
     //
     // recv(group_id) -> Vec<Blob>
+    // recv_from(group_id, from_index) -> Vec<Blob>
+    // recv_to(group_id, to_index) -> Vec<Blob>
+    // recv_from_to(group_id, from_index, to_index) -> Vec<Blob>
     let c = client.clone();
     engine.register_fn(
         "recv",
         move |group_id: String| -> RhaiResult<Vec<Blob>> {
             get_blobs(&c, group_id.as_str(), None, None)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+    let c = client.clone();
+    engine.register_fn(
+        "recv_from",
+        move |group_id: String, from: i64| -> RhaiResult<Vec<Blob>> {
+            get_blobs(&c, group_id.as_str(), Some(from), None)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+    let c = client.clone();
+    engine.register_fn(
+        "recv_to",
+        move |group_id: String, to: i64| -> RhaiResult<Vec<Blob>> {
+            get_blobs(&c, group_id.as_str(), None, Some(to))
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+    let c = client.clone();
+    engine.register_fn(
+        "recv_from_to",
+        move |group_id: String,
+              from: i64,
+              to: i64|
+              -> RhaiResult<Vec<Blob>> {
+            get_blobs(&c, group_id.as_str(), Some(from), Some(to))
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
