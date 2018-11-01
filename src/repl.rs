@@ -139,10 +139,10 @@ pub fn register_functions(
 
     // Create a group with the user as a single member.
     //
-    // create_group(group_id)
+    // create(group_id)
     let s = state.clone();
     engine.register_fn(
-        "create_group",
+        "create",
         move |group_id: String| -> RhaiResult<()> {
             let mut state = s.lock().unwrap();
             let identity = state.identity.clone();
