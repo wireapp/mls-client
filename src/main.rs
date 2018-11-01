@@ -1,6 +1,8 @@
 mod client;
+mod message;
 mod repl;
 mod state;
+mod utils;
 
 #[macro_use]
 extern crate serde_derive;
@@ -19,6 +21,7 @@ use std::thread;
 use std::time::Duration;
 
 use client::*;
+use message::*;
 use repl::*;
 use state::*;
 
@@ -78,10 +81,11 @@ fn main() {
 fn process_message(
     group_id: String,
     group_state: &mut GroupState,
-    blob: Blob,
+    message: Blob<Message>,
 ) {
-    println!("{}: got {:?}", group_id, blob);
-    if blob.index == group_state.next_blob {
+    println!("{}: got {:?}", group_id, message);
+    if message.index == group_state.next_blob {
+        // TODO: actually process the message
         group_state.next_blob += 1;
     } else {
         println!("Wrong blob index")
