@@ -129,6 +129,7 @@ pub fn register_functions(
                     slot.insert(GroupState {
                         next_blob: 0,
                         crypto: None,
+                        should_update: false,
                     });
                 }
             }
@@ -159,6 +160,7 @@ pub fn register_functions(
                     slot.insert(GroupState {
                         next_blob: 0,
                         crypto: Some(group_crypto),
+                        should_update: false,
                     });
                 }
             }
@@ -181,6 +183,17 @@ pub fn register_functions(
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
+
+    // Join a group and schedule an update. The welcome file has to be
+    // present.
+    //
+    // join(group_id)
+    let s = state.clone();
+    engine.register_fn("join", move |group_id: String| -> RhaiResult<()> {
+        let mut state = s.lock().unwrap();
+        join_group(&mut state, group_id)
+            .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+    });
 
     // Quit the program.
     //
@@ -240,6 +253,29 @@ fn add_to_group(
         }
     } else {
         Err("Group doesn't exist!".into())
+    }
+}
+
+fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
+    let identity = state.identity.clone();
+    if let hash_map::Entry::Vacant(entry_group_state) =
+        state.groups.entry(group_id.clone())
+    {
+        // Import the group
+        let welcome =
+            read_codec(format!("{}_{}.welcome", group_id, state.name))
+                .map_err(|e| e.to_string())?;
+        let group = group::Group::new_from_welcome(identity, &welcome);
+        let group_state = GroupState {
+            crypto: Some(group),
+            // TODO: this will break if blobs can include things other than group operations
+            next_blob: welcome.transcript.len() as i64,
+            should_update: true,
+        };
+        entry_group_state.insert(group_state);
+        Ok(())
+    } else {
+        Err("You're already a member of the group!".into())
     }
 }
 
