@@ -96,6 +96,21 @@ pub fn register_functions(
         },
     );
 
+    // Export your public credentials.
+    //
+    // export_public()
+    let s = state.clone();
+    engine.register_fn("export_public", move || -> RhaiResult<()> {
+        let state = s.lock().unwrap();
+        write_codec(format!("{}.pub", state.name), &state.credential)
+            .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+        write_codec(
+            format!("{}.init", state.name),
+            &state.init_key_bundle.init_key,
+        ).map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+        Ok(())
+    });
+
     // Subscribe to a group. This is possible even if the user does not
     // belong to the group (they can spy on group operations but they can't
     // usefully interpret them).
@@ -216,7 +231,7 @@ fn add_to_group(
             Ok(())
         } else {
             Err("You're not a part of the group \
-                 (even though you're subscribed to the updates"
+                 (even though you're subscribed to the updates)"
                 .into())
         }
     } else {

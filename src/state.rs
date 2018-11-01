@@ -15,6 +15,7 @@ pub struct GroupState {
 
 /// All state that we track
 pub struct State {
+    pub name: String,
     pub identity: keys::Identity,
     pub credential: keys::BasicCredential,
     pub init_key_bundle: keys::UserInitKeyBundle,
@@ -25,6 +26,7 @@ impl State {
     pub fn new(name: &str) -> Self {
         let identity = keys::Identity::random();
         State {
+            name: name.into(),
             identity: identity.clone(),
             credential: keys::BasicCredential {
                 identity: name.as_bytes().to_vec(),
