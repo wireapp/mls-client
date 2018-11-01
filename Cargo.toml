@@ -14,7 +14,7 @@ names = "0.11.0"
 # The underlying MLS algorithm implementation
 [dependencies.melissa]
 git = "https://github.com/wireapp/melissa"
-rev = "c95603ca04bcbc3ec6558e0903219a578f6770cd"
+rev = "116b6569ee8a749559744e8a03fe6f7be70fc1b2"
 
 # Using a fork that:
 #

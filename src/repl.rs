@@ -224,7 +224,7 @@ fn add_to_group(
             let init_key = read_codec(format!("{}.init", user_name))
                 .map_err(|e| e.to_string())?;
             // Generate a welcome package
-            let (welcome, add_op) =
+            let (welcome, add_op): (messages::Welcome, _) =
                 group_crypto.create_add(credential, &init_key);
             // Send the `add_op`;
             // TODO restart if the index is wrong
@@ -262,7 +262,7 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
         state.groups.entry(group_id.clone())
     {
         // Import the group
-        let welcome =
+        let welcome: messages::Welcome =
             read_codec(format!("{}_{}.welcome", group_id, state.name))
                 .map_err(|e| e.to_string())?;
         let group = group::Group::new_from_welcome(identity, &welcome);
