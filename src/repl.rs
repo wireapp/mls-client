@@ -185,7 +185,11 @@ pub fn register_functions(
     // Quit the program.
     //
     // quit()
+    // exit()
     engine.register_fn("quit", || {
+        exit(0);
+    });
+    engine.register_fn("exit", || {
         exit(0);
     });
 }
