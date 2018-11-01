@@ -1,5 +1,6 @@
 mod client;
 mod message;
+mod polling;
 mod repl;
 mod state;
 mod utils;
@@ -20,8 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use client::*;
-use message::*;
+use polling::*;
 use repl::*;
 use state::*;
 
@@ -73,34 +73,6 @@ fn main() {
                 println!("Error: {:?}", err);
                 break;
             }
-        }
-    }
-}
-
-/// Process a single message.
-fn process_message(
-    group_id: String,
-    group_state: &mut GroupState,
-    message: Blob<Message>,
-) {
-    println!("{}: got {:?}", group_id, message);
-    if message.index == group_state.next_blob {
-        // TODO: actually process the message
-        group_state.next_blob += 1;
-    } else {
-        println!("Wrong blob index")
-    }
-}
-
-/// Poll for messages in subscribed groups.
-fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
-    let mut state = state.lock().unwrap();
-    for (group_id, group_state) in state.groups.iter_mut() {
-        let blobs =
-            get_blobs(client, group_id, Some(group_state.next_blob), None)
-                .unwrap();
-        for blob in blobs {
-            process_message(group_id.clone(), group_state, blob)
         }
     }
 }
