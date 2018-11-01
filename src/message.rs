@@ -19,9 +19,10 @@ pub enum Message {
 impl fmt::Debug for Message {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Message::Operation(_) => fmt
+            Message::Operation(op) => fmt
                 .debug_tuple("Operation")
-                .field(&format_args!("_"))  // TODO display operation type
+                .field(&op.msg_type)
+                .field(&format_args!("<not shown>"))
                 .finish(),
         }
     }
