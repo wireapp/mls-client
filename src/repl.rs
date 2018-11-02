@@ -184,6 +184,21 @@ pub fn register_functions(
         },
     );
 
+    // Remove a user from the group. Assumes that the user's data is stored
+    // in `<user>.pub` and `<user>.init`.
+    //
+    // remove(group_id, user_name)
+    let s = state.clone();
+    let c = client.clone();
+    engine.register_fn(
+        "remove",
+        move |group_id: String, user_name: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            remove_from_group(&c, &mut state, group_id, user_name)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+
     // Quit the program.
     //
     // quit()
@@ -286,6 +301,52 @@ fn do_update(
         // TODO: we should try resending the blob if the sending fails.
         append_blob(client, &group_id, &blob).map_err(|e| e.to_string())?;
         Ok(())
+    } else {
+        Err("Group doesn't exist!".into())
+    }
+}
+
+fn remove_from_group(
+    client: &reqwest::Client,
+    state: &mut State,
+    group_id: String,
+    user_name: String,
+) -> Result<(), String> {
+    if let hash_map::Entry::Occupied(entry_group_state) =
+        state.groups.entry(group_id.clone())
+    {
+        let mut group_state = entry_group_state.into_mut();
+        // Find the user
+        let slot = group_state
+            .crypto
+            .get_members()
+            .iter()
+            .position(|k| k.identity == user_name.as_bytes().to_vec());
+        if let Some(slot) = slot {
+            // Create a remove operation
+            let remove_raw = group_state.crypto.create_remove(slot);
+            let remove_op = messages::GroupOperation {
+                msg_type: messages::GroupOperationType::Remove,
+                group_operation: messages::GroupOperationValue::Remove(
+                    remove_raw,
+                ),
+            };
+            // Process the remove operation
+            let blob = Blob {
+                index: group_state.next_blob,
+                content: Message(
+                    group_state.crypto.create_handshake(remove_op),
+                ),
+            };
+            process_message(&group_id, group_state, blob.clone());
+            // Send the operation;
+            // TODO restart if sending fails
+            append_blob(client, &group_id, &blob)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("User not found!".into())
+        }
     } else {
         Err("Group doesn't exist!".into())
     }
