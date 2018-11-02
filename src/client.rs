@@ -21,7 +21,7 @@ pub fn append_blob<T: Serialize>(
 ) -> reqwest::Result<()> {
     client
         .post(
-            format!("http://localhost:10100/groups/{}/blobs", group_id)
+            format!("http://34.254.174.109/groups/{}/blobs", group_id)
                 .as_str(),
         ).json(blob)
         .send()?
@@ -37,8 +37,7 @@ pub fn get_blobs<T: DeserializeOwned>(
     to: Option<i64>,
 ) -> reqwest::Result<Vec<Blob<T>>> {
     let mut req = client.get(
-        format!("http://localhost:10100/groups/{}/blobs", group_id)
-            .as_str(),
+        format!("http://34.254.174.109/groups/{}/blobs", group_id).as_str(),
     );
     if let Some(x) = from {
         req = req.query(&[("from", x)])
