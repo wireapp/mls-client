@@ -15,7 +15,9 @@ pub fn process_message(
 ) {
     println!("{}: got {:?}", group_id, message);
     if message.index == group_state.next_blob {
-        // TODO: actually process the message
+        if let Some(ref mut group) = group_state.crypto {
+            group.process_handshake(message.content.0);
+        }
         group_state.next_blob += 1;
     } else {
         println!("Wrong blob index")
