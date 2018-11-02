@@ -135,7 +135,6 @@ pub fn register_functions(
                     slot.insert(GroupState {
                         next_blob: 0,
                         crypto: group_crypto,
-                        should_update: false,
                     });
                 }
             }
@@ -159,8 +158,7 @@ pub fn register_functions(
         },
     );
 
-    // Join a group and schedule an update. The welcome file has to be
-    // present.
+    // Join a group. The welcome file has to be present.
     //
     // join(group_id)
     let s = state.clone();
@@ -169,6 +167,20 @@ pub fn register_functions(
         join_group(&mut state, group_id)
             .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
     });
+
+    // Do an update.
+    //
+    // update(group_id)
+    let s = state.clone();
+    let c = client.clone();
+    engine.register_fn(
+        "update",
+        move |group_id: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            do_update(&c, &mut state, group_id)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
 
     // Quit the program.
     //
@@ -239,7 +251,6 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
             crypto: group_crypto,
             // TODO: this will break if blobs can include things other than group operations
             next_blob: welcome.transcript.len() as i64,
-            should_update: true,
         };
         entry_group_state.insert(group_state);
         Ok(())
@@ -248,24 +259,32 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
     }
 }
 
-/*
-
-    // Alice adds Bob
-    let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(bob_credential, &bob_init_key);
-    group_alice.process_add(&add_alice_bob);
-
-    let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
-    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
-
-    // Bob updates
-    let update_bob = group_bob.create_update();
-    group_bob.process_update(1, &update_bob);
-    group_alice.process_update(1, &update_bob);
-    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
-
-    // Alice updates
-    let update_alice = group_alice.create_update();
-    group_alice.process_update(0, &update_alice);
-    group_bob.process_update(0, &update_alice);
-
-*/
+fn do_update(
+    client: &reqwest::Client,
+    state: &mut State,
+    group_id: String,
+) -> Result<(), String> {
+    if let hash_map::Entry::Occupied(entry_group_state) =
+        state.groups.entry(group_id.clone())
+    {
+        let mut group_state = entry_group_state.into_mut();
+        let update_op = messages::GroupOperation {
+            msg_type: messages::GroupOperationType::Update,
+            group_operation: messages::GroupOperationValue::Update(
+                group_state.crypto.create_update(),
+            ),
+        };
+        let blob = Blob {
+            index: group_state.next_blob,
+            content: Message(
+                group_state.crypto.create_handshake(update_op),
+            ),
+        };
+        process_message(&group_id, group_state, blob.clone());
+        // TODO: we should try resending the blob if the sending fails.
+        append_blob(client, &group_id, &blob).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Group doesn't exist!".into())
+    }
+}

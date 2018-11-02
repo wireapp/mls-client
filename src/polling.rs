@@ -1,6 +1,5 @@
 extern crate reqwest;
 
-use melissa::messages;
 use std::sync::{Arc, Mutex};
 
 use client::*;
@@ -37,25 +36,6 @@ pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
                 .unwrap();
         for blob in blobs {
             process_message(&group_id, group_state, blob)
-        }
-        // Perform an update, if necessary
-        if group_state.should_update {
-            let update_op = messages::GroupOperation {
-                msg_type: messages::GroupOperationType::Update,
-                group_operation: messages::GroupOperationValue::Update(
-                    group_state.crypto.create_update(),
-                ),
-            };
-            let blob = Blob {
-                index: group_state.next_blob,
-                content: Message(
-                    group_state.crypto.create_handshake(update_op),
-                ),
-            };
-            process_message(&group_id, group_state, blob.clone());
-            // TODO: we should try resending the blob if the sending fails.
-            append_blob(client, &group_id, &blob)
-                .unwrap_or_else(|err| println!("Error: {}", err));
         }
     }
 }

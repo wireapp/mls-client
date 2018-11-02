@@ -12,10 +12,6 @@ pub struct GroupState {
     /// Note that the cryptographic group ID will be random, with no
     /// correlation to the `group_id` used elsewhere in the code.
     pub crypto: group::Group,
-
-    /// Whether we should perform an update as soon as possible (e.g. if we
-    /// were just added to the group).
-    pub should_update: bool,
 }
 
 /// All state that we track
