@@ -109,6 +109,7 @@ pub fn register_functions(
             format!("{}.init", state.name),
             &state.init_key_bundle.init_key,
         ).map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+        println!("Wrote {}.pub and {}.init", state.name, state.name);
         Ok(())
     });
 
@@ -247,6 +248,7 @@ fn add_to_group(
             format!("{}_{}.welcome", group_id, user_name),
             &welcome,
         ).map_err(|e| e.to_string())?;
+        println!("Wrote {}_{}.welcome", group_id, user_name);
         Ok(())
     } else {
         Err("Group doesn't exist!".into())
