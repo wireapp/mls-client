@@ -98,9 +98,9 @@ pub fn register_functions(
 
     // Export your public credentials.
     //
-    // export_public()
+    // export()
     let s = state.clone();
-    engine.register_fn("export_public", move || -> RhaiResult<()> {
+    engine.register_fn("export", move || -> RhaiResult<()> {
         let state = s.lock().unwrap();
         write_codec(format!("{}.pub", state.name), &state.credential)
             .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
