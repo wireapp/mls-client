@@ -9,18 +9,21 @@ use state::*;
 
 /// Process a single message.
 pub fn process_message(
-    group_id: String,
+    group_id: &str,
     group_state: &mut GroupState,
     message: Blob<Message>,
 ) {
     println!("{}: got {:?}", group_id, message);
+    // TODO: we skip blobs that are older than what we've seen, but we don't
+    // check that they correspond to what we've seen.
     if message.index == group_state.next_blob {
-        if let Some(ref mut group) = group_state.crypto {
-            group.process_handshake(message.content.0);
-        }
+        group_state.crypto.process_handshake(message.content.0);
         group_state.next_blob += 1;
-    } else {
-        println!("Wrong blob index")
+    } else if message.index > group_state.next_blob {
+        println!(
+            "Blob from the future: expected index {}, got {}",
+            group_state.next_blob, message.index
+        )
     }
 }
 
@@ -33,26 +36,26 @@ pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
             get_blobs(client, group_id, Some(group_state.next_blob), None)
                 .unwrap();
         for blob in blobs {
-            process_message(group_id.clone(), group_state, blob)
+            process_message(&group_id, group_state, blob)
         }
         // Perform an update, if necessary
         if group_state.should_update {
-            if let Some(ref mut group) = group_state.crypto {
-                let update_op = messages::GroupOperation {
-                    msg_type: messages::GroupOperationType::Update,
-                    group_operation: messages::GroupOperationValue::Update(
-                        group.create_update(),
-                    ),
-                };
-                append_blob(
-                    client,
-                    group_id.as_ref(),
-                    &Blob {
-                        index: group_state.next_blob,
-                        content: Message(group.create_handshake(update_op)),
-                    },
-                ).unwrap_or_else(|err| println!("Error: {}", err));
-            }
+            let update_op = messages::GroupOperation {
+                msg_type: messages::GroupOperationType::Update,
+                group_operation: messages::GroupOperationValue::Update(
+                    group_state.crypto.create_update(),
+                ),
+            };
+            let blob = Blob {
+                index: group_state.next_blob,
+                content: Message(
+                    group_state.crypto.create_handshake(update_op),
+                ),
+            };
+            process_message(&group_id, group_state, blob.clone());
+            // TODO: we should try resending the blob if the sending fails.
+            append_blob(client, &group_id, &blob)
+                .unwrap_or_else(|err| println!("Error: {}", err));
         }
     }
 }

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use client::*;
 use message::*;
+use polling::*;
 use state::*;
 use utils::*;
 
@@ -111,32 +112,6 @@ pub fn register_functions(
         Ok(())
     });
 
-    // Subscribe to a group. This is possible even if the user does not
-    // belong to the group (they can spy on group operations but they can't
-    // usefully interpret them).
-    //
-    // subscribe(group_id)
-    let s = state.clone();
-    engine.register_fn(
-        "subscribe",
-        move |group_id: String| -> RhaiResult<()> {
-            let mut state = s.lock().unwrap();
-            match state.groups.entry(group_id) {
-                hash_map::Entry::Occupied(_) => {
-                    println!("Already subscribed!");
-                }
-                hash_map::Entry::Vacant(slot) => {
-                    slot.insert(GroupState {
-                        next_blob: 0,
-                        crypto: None,
-                        should_update: false,
-                    });
-                }
-            }
-            Ok(())
-        },
-    );
-
     // Create a group with the user as a single member.
     //
     // create(group_id)
@@ -159,7 +134,7 @@ pub fn register_functions(
                     );
                     slot.insert(GroupState {
                         next_blob: 0,
-                        crypto: Some(group_crypto),
+                        crypto: group_crypto,
                         should_update: false,
                     });
                 }
@@ -217,42 +192,33 @@ fn add_to_group(
         state.groups.entry(group_id.clone())
     {
         let mut group_state = entry_group_state.into_mut();
-        if let Some(ref mut group) = group_state.crypto {
-            // Read user info
-            let credential = read_codec(format!("{}.pub", user_name))
-                .map_err(|e| e.to_string())?;
-            let init_key = read_codec(format!("{}.init", user_name))
-                .map_err(|e| e.to_string())?;
-            // Generate a welcome package
-            let (welcome, add_raw) =
-                group.create_add(credential, &init_key);
-            // Send the adding operation;
-            // TODO restart if the index is wrong
-            let add_op = messages::GroupOperation {
-                msg_type: messages::GroupOperationType::Add,
-                group_operation: messages::GroupOperationValue::Add(
-                    add_raw,
-                ),
-            };
-            append_blob(
-                client,
-                group_id.as_ref(),
-                &Blob {
-                    index: group_state.next_blob,
-                    content: Message(group.create_handshake(add_op)),
-                },
-            ).map_err(|e| e.to_string())?;
-            // Save the welcome package
-            write_codec(
-                format!("{}_{}.welcome", group_id, user_name),
-                &welcome,
-            ).map_err(|e| e.to_string())?;
-            Ok(())
-        } else {
-            Err("You're not a part of the group \
-                 (even though you're subscribed to the updates)"
-                .into())
-        }
+        // Read user info
+        let credential = read_codec(format!("{}.pub", user_name))
+            .map_err(|e| e.to_string())?;
+        let init_key = read_codec(format!("{}.init", user_name))
+            .map_err(|e| e.to_string())?;
+        // Generate a welcome package
+        let (welcome, add_raw) =
+            group_state.crypto.create_add(credential, &init_key);
+        let add_op = messages::GroupOperation {
+            msg_type: messages::GroupOperationType::Add,
+            group_operation: messages::GroupOperationValue::Add(add_raw),
+        };
+        // Process the add operation
+        let blob = Blob {
+            index: group_state.next_blob,
+            content: Message(group_state.crypto.create_handshake(add_op)),
+        };
+        process_message(&group_id, group_state, blob.clone());
+        // Send the operation;
+        // TODO restart if sending fails
+        append_blob(client, &group_id, &blob).map_err(|e| e.to_string())?;
+        // Save the welcome package
+        write_codec(
+            format!("{}_{}.welcome", group_id, user_name),
+            &welcome,
+        ).map_err(|e| e.to_string())?;
+        Ok(())
     } else {
         Err("Group doesn't exist!".into())
     }
@@ -267,9 +233,10 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
         let welcome: messages::Welcome =
             read_codec(format!("{}_{}.welcome", group_id, state.name))
                 .map_err(|e| e.to_string())?;
-        let group = group::Group::new_from_welcome(identity, &welcome);
+        let group_crypto =
+            group::Group::new_from_welcome(identity, &welcome);
         let group_state = GroupState {
-            crypto: Some(group),
+            crypto: group_crypto,
             // TODO: this will break if blobs can include things other than group operations
             next_blob: welcome.transcript.len() as i64,
             should_update: true,
