@@ -29,17 +29,21 @@ The following commands should be run from two terminals.
 Export users' public keys into the current directory:
 
     > export()                          > export()
+    Wrote foo.pub and foo.init          Wrote bar.pub and bar.init
 
 Create a group and add a user (user's key will be read from the current
 directory, and the invitation will also be written into the current
 directory):
 
     > create("travel")
+
     > add("travel", "bar")
+    Wrote travel_bar.welcome
 
 Accept the invitation and do an update:
 
                                         > join("travel")
+
                                         > update()
 
 The first user does an update as well:
