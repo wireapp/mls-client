@@ -36,20 +36,18 @@ pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
         // Perform an update, if necessary
         if group_state.should_update {
             if let Some(ref mut group) = group_state.crypto {
-                let update_op = group.create_update();
-                let message = Message::Operation(
-                    messages::GroupOperation {
-                        msg_type: messages::GroupOperationType::Update,
-                        group_operation:
-                            messages::GroupOperationValue::Update(update_op),
-                    },
-                );
+                let update_op = messages::GroupOperation {
+                    msg_type: messages::GroupOperationType::Update,
+                    group_operation: messages::GroupOperationValue::Update(
+                        group.create_update(),
+                    ),
+                };
                 append_blob(
                     client,
                     group_id.as_ref(),
                     &Blob {
                         index: group_state.next_blob,
-                        content: message,
+                        content: Message(group.create_handshake(update_op)),
                     },
                 ).unwrap_or_else(|err| println!("Error: {}", err));
             }

@@ -6,32 +6,26 @@ use std::fmt;
 
 /// Any kind of message stored by the server.
 #[derive(Clone, Serialize, Deserialize)]
-pub enum Message {
-    Operation(
-        #[serde(
-            serialize_with = "serialize_group_operation",
-            deserialize_with = "deserialize_group_operation"
-        )]
-        messages::GroupOperation,
-    ),
-}
+pub struct Message(
+    #[serde(
+        serialize_with = "serialize_handshake",
+        deserialize_with = "deserialize_handshake"
+    )]
+    pub messages::Handshake,
+);
 
 impl fmt::Debug for Message {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Message::Operation(op) => fmt
-                .debug_tuple("Operation")
-                .field(&op.msg_type)
-                .field(&format_args!("<not shown>"))
-                .finish(),
-        }
+        let Message(handshake) = self;
+        fmt.debug_tuple("Handshake")
+            .field(&handshake.operation.msg_type)
+            .finish()
     }
 }
 
-// TODO use Codec, not Serialize/Deserialize
-
-fn serialize_group_operation<S>(
-    x: &messages::GroupOperation,
+/// Serialize a `Handshake` inside the message.
+fn serialize_handshake<S>(
+    x: &messages::Handshake,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -40,15 +34,15 @@ where
     serializer.serialize_bytes(x.encode_detached().as_slice())
 }
 
-fn deserialize_group_operation<'de, D>(
+/// Deserialize a `Handshake` inside the message.
+fn deserialize_handshake<'de, D>(
     deserializer: D,
-) -> Result<messages::GroupOperation, D::Error>
+) -> Result<messages::Handshake, D::Error>
 where
     D: de::Deserializer<'de>,
 {
     Vec::deserialize(deserializer).and_then(|v| {
-        messages::GroupOperation::decode_detached(v.as_slice()).map_err(
-            |_| de::Error::custom("Failed to decode a GroupOperation"),
-        )
+        messages::Handshake::decode_detached(v.as_slice())
+            .map_err(|_| de::Error::custom("Failed to decode a Handshake"))
     })
 }

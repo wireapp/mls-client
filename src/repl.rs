@@ -217,27 +217,29 @@ fn add_to_group(
         state.groups.entry(group_id.clone())
     {
         let mut group_state = entry_group_state.into_mut();
-        if let Some(ref mut group_crypto) = group_state.crypto {
+        if let Some(ref mut group) = group_state.crypto {
             // Read user info
             let credential = read_codec(format!("{}.pub", user_name))
                 .map_err(|e| e.to_string())?;
             let init_key = read_codec(format!("{}.init", user_name))
                 .map_err(|e| e.to_string())?;
             // Generate a welcome package
-            let (welcome, add_op): (messages::Welcome, _) =
-                group_crypto.create_add(credential, &init_key);
-            // Send the `add_op`;
+            let (welcome, add_raw) =
+                group.create_add(credential, &init_key);
+            // Send the adding operation;
             // TODO restart if the index is wrong
-            let message = Message::Operation(messages::GroupOperation {
+            let add_op = messages::GroupOperation {
                 msg_type: messages::GroupOperationType::Add,
-                group_operation: messages::GroupOperationValue::Add(add_op),
-            });
+                group_operation: messages::GroupOperationValue::Add(
+                    add_raw,
+                ),
+            };
             append_blob(
                 client,
                 group_id.as_ref(),
                 &Blob {
                     index: group_state.next_blob,
-                    content: message,
+                    content: Message(group.create_handshake(add_op)),
                 },
             ).map_err(|e| e.to_string())?;
             // Save the welcome package
