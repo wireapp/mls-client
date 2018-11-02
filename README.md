@@ -31,6 +31,7 @@ Export users' public keys into the current directory:
     > export()                          > export()
 
 Create a group and add a user (user's key will be read from the current
+directory, and the invitation will also be written into the current
 directory):
 
     > create("travel")
