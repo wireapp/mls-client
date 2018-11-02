@@ -4,6 +4,7 @@ mod polling;
 mod repl;
 mod state;
 mod utils;
+mod settings;
 
 #[macro_use]
 extern crate serde_derive;
@@ -14,6 +15,7 @@ extern crate reqwest;
 extern crate rhai;
 extern crate rustyline;
 extern crate serde;
+extern crate config;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -24,8 +26,13 @@ use std::time::Duration;
 use polling::*;
 use repl::*;
 use state::*;
+use settings::*;
 
 fn main() {
+    // Read settings
+    let settings = Settings::new();
+    println!("{:?}", settings.unwrap());
+
     // HTTP client instance
     let client = reqwest::Client::new();
 
