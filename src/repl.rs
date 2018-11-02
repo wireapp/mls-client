@@ -124,7 +124,9 @@ pub fn register_functions(
             let credential = state.credential.clone();
             match state.groups.entry(group_id) {
                 hash_map::Entry::Occupied(_) => {
-                    println!("Group already exists!");
+                    Err(EvalAltResult::ErrorRuntime(
+                        "Group already exists!".into(),
+                    ))
                 }
                 hash_map::Entry::Vacant(slot) => {
                     let group_crypto = group::Group::new(
@@ -136,9 +138,9 @@ pub fn register_functions(
                         next_blob: 0,
                         crypto: group_crypto,
                     });
+                    Ok(())
                 }
             }
-            Ok(())
         },
     );
 
