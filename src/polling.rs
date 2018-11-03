@@ -1,5 +1,7 @@
 extern crate reqwest;
+extern crate serde_json;
 
+use std::fs::File;
 use std::sync::{Arc, Mutex};
 
 use client::*;
@@ -27,10 +29,15 @@ pub fn process_message(
 }
 
 /// Poll for messages in subscribed groups and perform scheduled updates.
+///
+/// Also save state to disk.
+///
+/// TODO this is hacky, doesn't belong here, and dumping unprotected private
+/// keys isn't the best idea, too.
 pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
     let mut state = state.lock().unwrap();
+    // Download blobs
     for (group_id, group_state) in state.groups.iter_mut() {
-        // Download blobs
         let blobs =
             get_blobs(client, group_id, Some(group_state.next_blob), None)
                 .unwrap();
@@ -38,4 +45,7 @@ pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
             process_message(&group_id, group_state, blob)
         }
     }
+    // Save state to disk
+    let file = File::create(format!("{}.state", state.name)).unwrap();
+    serde_json::to_writer(file, &*state).unwrap();
 }

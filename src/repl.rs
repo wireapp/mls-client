@@ -5,6 +5,7 @@ use melissa::group;
 use melissa::messages;
 use rhai::*;
 use std::collections::hash_map;
+use std::fs::File;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
@@ -197,6 +198,23 @@ pub fn register_functions(
             let mut state = s.lock().unwrap();
             remove_from_group(&c, &mut state, group_id, user_name)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+
+    // Load state from disk (from `<user>.state`).
+    //
+    // load(user_name)
+    let s = state.clone();
+    engine.register_fn(
+        "load",
+        move |user_name: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            let file = File::open(format!("{}.state", user_name))
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+            *state = serde_json::from_reader(file)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+            println!("Loaded {}", state.name);
+            Ok(())
         },
     );
 
