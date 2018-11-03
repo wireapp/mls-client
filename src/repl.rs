@@ -22,6 +22,8 @@ pub fn register_types(engine: &mut Engine) {
     engine.register_type::<Message>();
     engine.register_type::<Blob<Message>>();
     engine.register_type::<Vec<Blob<Message>>>();
+    engine.register_type::<String>();
+    engine.register_type::<Vec<String>>();
 }
 
 pub fn register_functions(
@@ -198,6 +200,28 @@ pub fn register_functions(
             let mut state = s.lock().unwrap();
             remove_from_group(&c, &mut state, group_id, user_name)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+
+    // See group's roster.
+    //
+    // roster(group_id)
+    let s = state.clone();
+    engine.register_fn(
+        "roster",
+        move |group_id: String| -> RhaiResult<Vec<String>> {
+            let state = s.lock().unwrap();
+            if let Some(group_state) = state.groups.get(&group_id) {
+                Ok(group_state
+                    .crypto
+                    .get_members()
+                    .iter()
+                    .map(|cred| {
+                        String::from_utf8_lossy(&cred.identity).into()
+                    }).collect())
+            } else {
+                Err(EvalAltResult::ErrorRuntime("Unknown group!".into()))
+            }
         },
     );
 
