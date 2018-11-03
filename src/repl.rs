@@ -2,6 +2,7 @@ extern crate reqwest;
 extern crate serde_json;
 
 use melissa::group;
+use melissa::keys;
 use melissa::messages;
 use rhai::*;
 use std::collections::hash_map;
@@ -369,12 +370,16 @@ fn remove_from_group(
         state.groups.entry(group_id.clone())
     {
         let mut group_state = entry_group_state.into_mut();
-        // Find the user
+        // Find the user; we can't find them by username because we don't
+        // get usernames from add operations, so we have to look at the key
+        let credential: keys::BasicCredential =
+            read_codec(format!("{}.pub", user_name))
+                .map_err(|e| e.to_string())?;
         let slot = group_state
             .crypto
             .get_members()
             .iter()
-            .position(|k| k.identity == user_name.as_bytes().to_vec());
+            .position(|k| k.public_key == credential.public_key);
         if let Some(slot) = slot {
             // Create a remove operation
             let remove_raw = group_state.crypto.create_remove(slot);
