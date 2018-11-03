@@ -225,6 +225,15 @@ pub fn register_functions(
         },
     );
 
+    // List groups.
+    //
+    // list()
+    let s = state.clone();
+    engine.register_fn("list", move || -> RhaiResult<Vec<String>> {
+        let state = s.lock().unwrap();
+        Ok(state.groups.keys().map(|x| x.clone()).collect())
+    });
+
     // Load state from disk (from `<user>.state`).
     //
     // load(user_name)
