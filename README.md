@@ -20,15 +20,11 @@ See `src/repl.rs` for the list of commands.
 
 ## Sample scenario
 
-The following commands should be run from two terminals.
+The following commands should be run from two terminals. Create two users:
 
     $ cargo run                         $ cargo run
 
     Created new user 'foo'              Created new user 'bar'
-
-Export users' public keys into the current directory:
-
-    > export()                          > export()
     Wrote foo.pub and foo.init          Wrote bar.pub and bar.init
 
 Create a group and add a user (user's key will be read from the current

@@ -101,22 +101,6 @@ pub fn register_functions(
         },
     );
 
-    // Export your public credentials.
-    //
-    // export()
-    let s = state.clone();
-    engine.register_fn("export", move || -> RhaiResult<()> {
-        let state = s.lock().unwrap();
-        write_codec(format!("{}.pub", state.name), &state.credential)
-            .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
-        write_codec(
-            format!("{}.init", state.name),
-            &state.init_key_bundle.init_key,
-        ).map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
-        println!("Wrote {}.pub and {}.init", state.name, state.name);
-        Ok(())
-    });
-
     // Create a group with the user as a single member.
     //
     // create(group_id)
