@@ -27,6 +27,7 @@ use polling::*;
 use repl::*;
 use state::*;
 use settings::*;
+use utils::*;
 
 fn main() {
     // Read settings
@@ -44,7 +45,19 @@ fn main() {
     let name = names::Generator::default().next().unwrap();
     let state: Arc<Mutex<State>> =
         Arc::new(Mutex::new(State::new(name.as_str())));
-    println!("\nCreated new user '{}' and generated keys\n", name);
+    println!("\nCreated new user '{}'", name);
+
+    // Write user's keys
+    {
+        let state = state.lock().unwrap();
+        write_codec(format!("{}.pub", state.name), &state.credential)
+            .unwrap();
+        write_codec(
+            format!("{}.init", state.name),
+            &state.init_key_bundle.init_key,
+        ).unwrap();
+        println!("Wrote {}.pub and {}.init", state.name, state.name);
+    }
 
     // Set up polling
     let c = client.clone();

@@ -2,14 +2,17 @@ extern crate reqwest;
 extern crate serde_json;
 
 use melissa::group;
+use melissa::keys;
 use melissa::messages;
 use rhai::*;
 use std::collections::hash_map;
+use std::fs::File;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 use client::*;
 use message::*;
+use polling::*;
 use state::*;
 use utils::*;
 use settings::*;
@@ -21,6 +24,8 @@ pub fn register_types(engine: &mut Engine) {
     engine.register_type::<Message>();
     engine.register_type::<Blob<Message>>();
     engine.register_type::<Vec<Blob<Message>>>();
+    engine.register_type::<String>();
+    engine.register_type::<Vec<String>>();
 }
 
 pub fn register_functions(
@@ -103,47 +108,6 @@ pub fn register_functions(
         },
     );
 
-    // Export your public credentials.
-    //
-    // export()
-    let s = state.clone();
-    engine.register_fn("export", move || -> RhaiResult<()> {
-        let state = s.lock().unwrap();
-        write_codec(format!("{}.pub", state.name), &state.credential)
-            .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
-        write_codec(
-            format!("{}.init", state.name),
-            &state.init_key_bundle.init_key,
-        ).map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
-        Ok(())
-    });
-
-    // Subscribe to a group. This is possible even if the user does not
-    // belong to the group (they can spy on group operations but they can't
-    // usefully interpret them).
-    //
-    // subscribe(group_id)
-    let s = state.clone();
-    engine.register_fn(
-        "subscribe",
-        move |group_id: String| -> RhaiResult<()> {
-            let mut state = s.lock().unwrap();
-            match state.groups.entry(group_id) {
-                hash_map::Entry::Occupied(_) => {
-                    println!("Already subscribed!");
-                }
-                hash_map::Entry::Vacant(slot) => {
-                    slot.insert(GroupState {
-                        next_blob: 0,
-                        crypto: None,
-                        should_update: false,
-                    });
-                }
-            }
-            Ok(())
-        },
-    );
-
     // Create a group with the user as a single member.
     //
     // create(group_id)
@@ -156,7 +120,9 @@ pub fn register_functions(
             let credential = state.credential.clone();
             match state.groups.entry(group_id) {
                 hash_map::Entry::Occupied(_) => {
-                    println!("Group already exists!");
+                    Err(EvalAltResult::ErrorRuntime(
+                        "Group already exists!".into(),
+                    ))
                 }
                 hash_map::Entry::Vacant(slot) => {
                     let group_crypto = group::Group::new(
@@ -166,12 +132,11 @@ pub fn register_functions(
                     );
                     slot.insert(GroupState {
                         next_blob: 0,
-                        crypto: Some(group_crypto),
-                        should_update: false,
+                        crypto: group_crypto,
                     });
+                    Ok(())
                 }
             }
-            Ok(())
         },
     );
 
@@ -192,8 +157,7 @@ pub fn register_functions(
         },
     );
 
-    // Join a group and schedule an update. The welcome file has to be
-    // present.
+    // Join a group. The welcome file has to be present.
     //
     // join(group_id)
     let s = state.clone();
@@ -202,6 +166,85 @@ pub fn register_functions(
         join_group(&mut state, group_id)
             .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
     });
+
+    // Do an update.
+    //
+    // update(group_id)
+    let s = state.clone();
+    let c = client.clone();
+    let set = settings.clone();
+    engine.register_fn(
+        "update",
+        move |group_id: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            do_update(&set, &c, &mut state, group_id)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+
+    // Remove a user from the group. Assumes that the user's data is stored
+    // in `<user>.pub` and `<user>.init`.
+    //
+    // remove(group_id, user_name)
+    let s = state.clone();
+    let c = client.clone();
+    let set = settings.clone();
+    engine.register_fn(
+        "remove",
+        move |group_id: String, user_name: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            remove_from_group(&set, &c, &mut state, group_id, user_name)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        },
+    );
+
+    // See group's roster.
+    //
+    // roster(group_id)
+    let s = state.clone();
+    engine.register_fn(
+        "roster",
+        move |group_id: String| -> RhaiResult<Vec<String>> {
+            let state = s.lock().unwrap();
+            if let Some(group_state) = state.groups.get(&group_id) {
+                Ok(group_state
+                    .crypto
+                    .get_members()
+                    .iter()
+                    .map(|cred| {
+                        String::from_utf8_lossy(&cred.identity).into()
+                    }).collect())
+            } else {
+                Err(EvalAltResult::ErrorRuntime("Unknown group!".into()))
+            }
+        },
+    );
+
+    // List groups.
+    //
+    // list()
+    let s = state.clone();
+    engine.register_fn("list", move || -> RhaiResult<Vec<String>> {
+        let state = s.lock().unwrap();
+        Ok(state.groups.keys().map(|x| x.clone()).collect())
+    });
+
+    // Load state from disk (from `<user>.state`).
+    //
+    // load(user_name)
+    let s = state.clone();
+    engine.register_fn(
+        "load",
+        move |user_name: String| -> RhaiResult<()> {
+            let mut state = s.lock().unwrap();
+            let file = File::open(format!("{}.state", user_name))
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+            *state = serde_json::from_reader(file)
+                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+            println!("Loaded {}", state.name);
+            Ok(())
+        },
+    );
 
     // Quit the program.
     //
@@ -226,43 +269,34 @@ fn add_to_group(
         state.groups.entry(group_id.clone())
     {
         let mut group_state = entry_group_state.into_mut();
-        if let Some(ref mut group) = group_state.crypto {
-            // Read user info
-            let credential = read_codec(format!("{}.pub", user_name))
-                .map_err(|e| e.to_string())?;
-            let init_key = read_codec(format!("{}.init", user_name))
-                .map_err(|e| e.to_string())?;
-            // Generate a welcome package
-            let (welcome, add_raw) =
-                group.create_add(credential, &init_key);
-            // Send the adding operation;
-            // TODO restart if the index is wrong
-            let add_op = messages::GroupOperation {
-                msg_type: messages::GroupOperationType::Add,
-                group_operation: messages::GroupOperationValue::Add(
-                    add_raw,
-                ),
-            };
-            append_blob(
-                settings,
-                client,
-                group_id.as_ref(),
-                &Blob {
-                    index: group_state.next_blob,
-                    content: Message(group.create_handshake(add_op)),
-                },
-            ).map_err(|e| e.to_string())?;
-            // Save the welcome package
-            write_codec(
-                format!("{}_{}.welcome", group_id, user_name),
-                &welcome,
-            ).map_err(|e| e.to_string())?;
-            Ok(())
-        } else {
-            Err("You're not a part of the group \
-                 (even though you're subscribed to the updates)"
-                .into())
-        }
+        // Read user info
+        let credential = read_codec(format!("{}.pub", user_name))
+            .map_err(|e| e.to_string())?;
+        let init_key = read_codec(format!("{}.init", user_name))
+            .map_err(|e| e.to_string())?;
+        // Generate a welcome package
+        let (welcome, add_raw) =
+            group_state.crypto.create_add(credential, &init_key);
+        let add_op = messages::GroupOperation {
+            msg_type: messages::GroupOperationType::Add,
+            group_operation: messages::GroupOperationValue::Add(add_raw),
+        };
+        // Process the add operation
+        let blob = Blob {
+            index: group_state.next_blob,
+            content: Message(group_state.crypto.create_handshake(add_op)),
+        };
+        process_message(&group_id, group_state, blob.clone());
+        // Send the operation;
+        // TODO restart if sending fails
+        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
+        // Save the welcome package
+        write_codec(
+            format!("{}_{}.welcome", group_id, user_name),
+            &welcome,
+        ).map_err(|e| e.to_string())?;
+        println!("Wrote {}_{}.welcome", group_id, user_name);
+        Ok(())
     } else {
         Err("Group doesn't exist!".into())
     }
@@ -277,12 +311,12 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
         let welcome: messages::Welcome =
             read_codec(format!("{}_{}.welcome", group_id, state.name))
                 .map_err(|e| e.to_string())?;
-        let group = group::Group::new_from_welcome(identity, &welcome);
+        let group_crypto =
+            group::Group::new_from_welcome(identity, &welcome);
         let group_state = GroupState {
-            crypto: Some(group),
+            crypto: group_crypto,
             // TODO: this will break if blobs can include things other than group operations
             next_blob: welcome.transcript.len() as i64,
-            should_update: true,
         };
         entry_group_state.insert(group_state);
         Ok(())
@@ -291,24 +325,84 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
     }
 }
 
-/*
+fn do_update(
+    settings: &Settings,
+    client: &reqwest::Client,
+    state: &mut State,
+    group_id: String,
+) -> Result<(), String> {
+    if let hash_map::Entry::Occupied(entry_group_state) =
+        state.groups.entry(group_id.clone())
+    {
+        let mut group_state = entry_group_state.into_mut();
+        let update_op = messages::GroupOperation {
+            msg_type: messages::GroupOperationType::Update,
+            group_operation: messages::GroupOperationValue::Update(
+                group_state.crypto.create_update(),
+            ),
+        };
+        let blob = Blob {
+            index: group_state.next_blob,
+            content: Message(
+                group_state.crypto.create_handshake(update_op),
+            ),
+        };
+        process_message(&group_id, group_state, blob.clone());
+        // TODO: we should try resending the blob if the sending fails.
+        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Group doesn't exist!".into())
+    }
+}
 
-    // Alice adds Bob
-    let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(bob_credential, &bob_init_key);
-    group_alice.process_add(&add_alice_bob);
-
-    let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
-    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
-
-    // Bob updates
-    let update_bob = group_bob.create_update();
-    group_bob.process_update(1, &update_bob);
-    group_alice.process_update(1, &update_bob);
-    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
-
-    // Alice updates
-    let update_alice = group_alice.create_update();
-    group_alice.process_update(0, &update_alice);
-    group_bob.process_update(0, &update_alice);
-
-*/
+fn remove_from_group(
+    settings: &Settings,
+    client: &reqwest::Client,
+    state: &mut State,
+    group_id: String,
+    user_name: String,
+) -> Result<(), String> {
+    if let hash_map::Entry::Occupied(entry_group_state) =
+        state.groups.entry(group_id.clone())
+    {
+        let mut group_state = entry_group_state.into_mut();
+        // Find the user; we can't find them by username because we don't
+        // get usernames from add operations, so we have to look at the key
+        let credential: keys::BasicCredential =
+            read_codec(format!("{}.pub", user_name))
+                .map_err(|e| e.to_string())?;
+        let slot = group_state
+            .crypto
+            .get_members()
+            .iter()
+            .position(|k| k.public_key == credential.public_key);
+        if let Some(slot) = slot {
+            // Create a remove operation
+            let remove_raw = group_state.crypto.create_remove(slot);
+            let remove_op = messages::GroupOperation {
+                msg_type: messages::GroupOperationType::Remove,
+                group_operation: messages::GroupOperationValue::Remove(
+                    remove_raw,
+                ),
+            };
+            // Process the remove operation
+            let blob = Blob {
+                index: group_state.next_blob,
+                content: Message(
+                    group_state.crypto.create_handshake(remove_op),
+                ),
+            };
+            process_message(&group_id, group_state, blob.clone());
+            // Send the operation;
+            // TODO restart if sending fails
+            append_blob(&settings, client, &group_id, &blob)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("User not found!".into())
+        }
+    } else {
+        Err("Group doesn't exist!".into())
+    }
+}
