@@ -1,8 +1,8 @@
 use config::{ConfigError, Config, File};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    server: String
+    pub server: String
 }
 
 impl Settings {

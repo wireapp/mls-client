@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use client::*;
 use message::*;
 use state::*;
+use settings::*;
 
 /// Process a single message.
 pub fn process_message(
@@ -25,12 +26,12 @@ pub fn process_message(
 }
 
 /// Poll for messages in subscribed groups and perform scheduled updates.
-pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
+pub fn poll(settings: &Settings, client: &reqwest::Client, state: Arc<Mutex<State>>) {
     let mut state = state.lock().unwrap();
     for (group_id, group_state) in state.groups.iter_mut() {
         // Download blobs
         let blobs =
-            get_blobs(client, group_id, Some(group_state.next_blob), None)
+            get_blobs(&settings, client, group_id, Some(group_state.next_blob), None)
                 .unwrap();
         for blob in blobs {
             process_message(group_id.clone(), group_state, blob)
@@ -45,6 +46,7 @@ pub fn poll(client: &reqwest::Client, state: Arc<Mutex<State>>) {
                     ),
                 };
                 append_blob(
+                    &settings,
                     client,
                     group_id.as_ref(),
                     &Blob {

@@ -30,8 +30,8 @@ use settings::*;
 
 fn main() {
     // Read settings
-    let settings = Settings::new();
-    println!("{:?}", settings.unwrap());
+    let settings = Settings::new().unwrap();
+    println!("{:?}", settings);
 
     // HTTP client instance
     let client = reqwest::Client::new();
@@ -49,14 +49,15 @@ fn main() {
     // Set up polling
     let c = client.clone();
     let s = state.clone();
+    let set = settings.clone();
     thread::spawn(move || loop {
-        poll(&c, s.clone());
+        poll(&set, &c, s.clone());
         thread::sleep(Duration::from_secs(1));
     });
 
     // Prepare the REPL
     register_types(&mut engine);
-    register_functions(&client, state.clone(), &mut engine);
+    register_functions(&settings, &client, state.clone(), &mut engine);
 
     // Start the REPL
     let mut rl = Editor::<()>::new();
