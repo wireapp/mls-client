@@ -15,6 +15,7 @@ use message::*;
 use polling::*;
 use state::*;
 use utils::*;
+use settings::*;
 
 pub fn register_types(engine: &mut Engine) {
     // All return types HAVE to be registered here, or else exception
@@ -28,6 +29,7 @@ pub fn register_types(engine: &mut Engine) {
 }
 
 pub fn register_functions(
+    settings: &Settings,
     client: &reqwest::Client,
     state: Arc<Mutex<State>>,
     engine: &mut Engine,
@@ -47,10 +49,11 @@ pub fn register_functions(
     //
     // send(group_id, blob)
     let c = client.clone();
+    let s = settings.clone();
     engine.register_fn(
         "send",
         move |group_id: String, blob: Blob<Message>| -> RhaiResult<()> {
-            append_blob(&c, group_id.as_str(), &blob)
+            append_blob(&s, &c, group_id.as_str(), &blob)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
@@ -62,41 +65,45 @@ pub fn register_functions(
     // recv_to(group_id, to_index) -> Vec<Blob<Message>>
     // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
     let c = client.clone();
+    let s = settings.clone();
     engine.register_fn(
         "recv",
         move |group_id: String| -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&c, group_id.as_str(), None, None)
+            get_blobs(&s, &c, group_id.as_str(), None, None)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
     let c = client.clone();
+    let s = settings.clone();
     engine.register_fn(
         "recv_from",
         move |group_id: String,
               from: i64|
               -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&c, group_id.as_str(), Some(from), None)
+            get_blobs(&s, &c, group_id.as_str(), Some(from), None)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
     let c = client.clone();
+    let s = settings.clone();
     engine.register_fn(
         "recv_to",
         move |group_id: String,
               to: i64|
               -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&c, group_id.as_str(), None, Some(to))
+            get_blobs(&s, &c, group_id.as_str(), None, Some(to))
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
     let c = client.clone();
+    let s = settings.clone();
     engine.register_fn(
         "recv_from_to",
         move |group_id: String,
               from: i64,
               to: i64|
               -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&c, group_id.as_str(), Some(from), Some(to))
+            get_blobs(&s, &c, group_id.as_str(), Some(from), Some(to))
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
@@ -140,11 +147,12 @@ pub fn register_functions(
     // add(group_id, user_name)
     let s = state.clone();
     let c = client.clone();
+    let set = settings.clone();
     engine.register_fn(
         "add",
         move |group_id: String, user_name: String| -> RhaiResult<()> {
             let mut state = s.lock().unwrap();
-            add_to_group(&c, &mut state, group_id, user_name)
+            add_to_group(&set, &c, &mut state, group_id, user_name)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
@@ -164,11 +172,12 @@ pub fn register_functions(
     // update(group_id)
     let s = state.clone();
     let c = client.clone();
+    let set = settings.clone();
     engine.register_fn(
         "update",
         move |group_id: String| -> RhaiResult<()> {
             let mut state = s.lock().unwrap();
-            do_update(&c, &mut state, group_id)
+            do_update(&set, &c, &mut state, group_id)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
@@ -179,11 +188,12 @@ pub fn register_functions(
     // remove(group_id, user_name)
     let s = state.clone();
     let c = client.clone();
+    let set = settings.clone();
     engine.register_fn(
         "remove",
         move |group_id: String, user_name: String| -> RhaiResult<()> {
             let mut state = s.lock().unwrap();
-            remove_from_group(&c, &mut state, group_id, user_name)
+            remove_from_group(&set, &c, &mut state, group_id, user_name)
                 .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
@@ -249,6 +259,7 @@ pub fn register_functions(
 }
 
 fn add_to_group(
+    settings: &Settings,
     client: &reqwest::Client,
     state: &mut State,
     group_id: String,
@@ -278,7 +289,7 @@ fn add_to_group(
         process_message(&group_id, group_state, blob.clone());
         // Send the operation;
         // TODO restart if sending fails
-        append_blob(client, &group_id, &blob).map_err(|e| e.to_string())?;
+        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
         // Save the welcome package
         write_codec(
             format!("{}_{}.welcome", group_id, user_name),
@@ -315,6 +326,7 @@ fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
 }
 
 fn do_update(
+    settings: &Settings,
     client: &reqwest::Client,
     state: &mut State,
     group_id: String,
@@ -337,7 +349,7 @@ fn do_update(
         };
         process_message(&group_id, group_state, blob.clone());
         // TODO: we should try resending the blob if the sending fails.
-        append_blob(client, &group_id, &blob).map_err(|e| e.to_string())?;
+        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err("Group doesn't exist!".into())
@@ -345,6 +357,7 @@ fn do_update(
 }
 
 fn remove_from_group(
+    settings: &Settings,
     client: &reqwest::Client,
     state: &mut State,
     group_id: String,
@@ -383,7 +396,7 @@ fn remove_from_group(
             process_message(&group_id, group_state, blob.clone());
             // Send the operation;
             // TODO restart if sending fails
-            append_blob(client, &group_id, &blob)
+            append_blob(&settings, client, &group_id, &blob)
                 .map_err(|e| e.to_string())?;
             Ok(())
         } else {
