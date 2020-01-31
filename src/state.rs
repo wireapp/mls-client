@@ -53,7 +53,7 @@ impl State {
                 identity: name.as_bytes().to_vec(),
                 public_key: identity.public_key,
             },
-            init_key_bundle: keys::UserInitKeyBundle::new(1, &identity),
+            init_key_bundle: keys::UserInitKeyBundle::new(&identity),
             groups: HashMap::new(),
         }
     }

@@ -28,35 +28,29 @@ pub fn register_types(engine: &mut Engine) {
     engine.register_type::<Vec<String>>();
 }
 
+// Create a blob.
+//
+// blob(index, message) -> Blob<Message>
+fn blob(index: i64, content: Message) -> Blob<Message> {
+    Blob { index, content }
+}
+
 pub fn register_functions(
     settings: &Settings,
     client: &reqwest::Client,
     state: Arc<Mutex<State>>,
     engine: &mut Engine,
 ) {
-    // Create a blob.
-    //
-    // blob(index, message) -> Blob<Message>
-    engine.register_fn(
-        "blob",
-        |index: i64, content: Message| -> Blob<Message> {
-            Blob { index, content }
-        },
-    );
+
+    engine.register_fn("blob", blob);
 
     // Post a blob without adding it to the group state (though it will be
     // added anyway when doing polling).
     //
     // send(group_id, blob)
-    let c = client.clone();
-    let s = settings.clone();
-    engine.register_fn(
-        "send",
-        move |group_id: String, blob: Blob<Message>| -> RhaiResult<()> {
-            append_blob(&s, &c, group_id.as_str(), &blob)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-        },
-    );
+    let send = |settings, client| move |group_id: String, blob: Blob<Message>|
+        append_blob(settings, client, group_id.as_str(), &blob);
+    engine.register_fn("send", send);
 
     // Fetch all blobs without adding them to the group state.
     //
@@ -64,107 +58,49 @@ pub fn register_functions(
     // recv_from(group_id, from_index) -> Vec<Blob<Message>>
     // recv_to(group_id, to_index) -> Vec<Blob<Message>>
     // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
-    let c = client.clone();
-    let s = settings.clone();
-    engine.register_fn(
-        "recv",
-        move |group_id: String| -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&s, &c, group_id.as_str(), None, None)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-        },
-    );
-    let c = client.clone();
-    let s = settings.clone();
-    engine.register_fn(
-        "recv_from",
-        move |group_id: String,
-              from: i64|
-              -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&s, &c, group_id.as_str(), Some(from), None)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-        },
-    );
-    let c = client.clone();
-    let s = settings.clone();
-    engine.register_fn(
-        "recv_to",
-        move |group_id: String,
-              to: i64|
-              -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&s, &c, group_id.as_str(), None, Some(to))
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-        },
-    );
-    let c = client.clone();
-    let s = settings.clone();
-    engine.register_fn(
-        "recv_from_to",
-        move |group_id: String,
-              from: i64,
-              to: i64|
-              -> RhaiResult<Vec<Blob<Message>>> {
-            get_blobs(&s, &c, group_id.as_str(), Some(from), Some(to))
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
-        },
-    );
+
+    let recv =  |settings, client| move |group_id: String|
+        get_blobs(settings, client, group_id.as_str(), None, None);
+    engine.register_fn("recv", recv);
+
+    let recv_from = |settings, client| move |group_id: String, from: i64|
+        get_blobs(settings, client, group_id.as_str(), Some(from), None);
+    engine.register_fn("recv_from", recv_from);
+
+    let recv_to = |settings, client| move |group_id: String, to: i64|
+        get_blobs(settings, client, group_id.as_str(), None, Some(to));
+    engine.register_fn("recv_to", recv_to);
+
+    let recv_from_to = |settings, client| move |group_id: String, from: i64, to: i64|
+        get_blobs(settings, client, group_id.as_str(), Some(from), Some(to));
+    engine.register_fn("recv_from_to", recv_from_to);
 
     // Create a group with the user as a single member.
     //
     // create(group_id)
-    let s = state.clone();
-    engine.register_fn(
-        "create",
-        move |group_id: String| -> RhaiResult<()> {
-            let mut state = s.lock().unwrap();
-            let identity = state.identity.clone();
-            let credential = state.credential.clone();
-            match state.groups.entry(group_id) {
-                hash_map::Entry::Occupied(_) => {
-                    Err(EvalAltResult::ErrorRuntime(
-                        "Group already exists!".into(),
-                    ))
-                }
-                hash_map::Entry::Vacant(slot) => {
-                    let group_crypto = group::Group::new(
-                        identity,
-                        credential,
-                        group::GroupId::random(),
-                    );
-                    slot.insert(GroupState {
-                        next_blob: 0,
-                        crypto: group_crypto,
-                    });
-                    Ok(())
-                }
-            }
-        },
-    );
+    engine.register_fn("create", |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
+        create_group(state.clone(), group_id)
+    });
 
     // Add a user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
     // `<user>.init`. Saves the welcome package to `<group>_<user>.welcome`.
     //
     // add(group_id, user_name)
-    let s = state.clone();
-    let c = client.clone();
-    let set = settings.clone();
+    let _c = client.clone();
+    let _set = settings.clone();
     engine.register_fn(
         "add",
-        move |group_id: String, user_name: String| -> RhaiResult<()> {
-            let mut state = s.lock().unwrap();
-            add_to_group(&set, &c, &mut state, group_id, user_name)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+        |state: Arc<Mutex<State>>, _c: reqwest::Client, _set: Settings| move |group_id: String, user_name: String| -> Result<(), String> {
+            add_to_group(&_set, &_c, state.clone(), group_id, user_name)
         },
     );
 
     // Join a group. The welcome file has to be present.
     //
     // join(group_id)
-    let s = state.clone();
-    engine.register_fn("join", move |group_id: String| -> RhaiResult<()> {
-        let mut state = s.lock().unwrap();
-        join_group(&mut state, group_id)
-            .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
+    engine.register_fn("join", |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
+        join_group(state.clone(), group_id)
     });
 
     // Do an update.
@@ -175,10 +111,9 @@ pub fn register_functions(
     let set = settings.clone();
     engine.register_fn(
         "update",
-        move |group_id: String| -> RhaiResult<()> {
+        |s: Arc<Mutex<State>>, c: reqwest::Client, set: Settings| move |group_id: String| -> Result<(), String> {
             let mut state = s.lock().unwrap();
             do_update(&set, &c, &mut state, group_id)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
 
@@ -191,10 +126,9 @@ pub fn register_functions(
     let set = settings.clone();
     engine.register_fn(
         "remove",
-        move |group_id: String, user_name: String| -> RhaiResult<()> {
+        |s: Arc<Mutex<State>>, c: reqwest::Client, set: Settings| move |group_id: String, user_name: String| -> Result<(), String> {
             let mut state = s.lock().unwrap();
             remove_from_group(&set, &c, &mut state, group_id, user_name)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))
         },
     );
 
@@ -204,7 +138,7 @@ pub fn register_functions(
     let s = state.clone();
     engine.register_fn(
         "roster",
-        move |group_id: String| -> RhaiResult<Vec<String>> {
+        |s: Arc<Mutex<State>>| move |group_id: String| -> Result<Vec<String>, String> {
             let state = s.lock().unwrap();
             if let Some(group_state) = state.groups.get(&group_id) {
                 Ok(group_state
@@ -215,7 +149,7 @@ pub fn register_functions(
                         String::from_utf8_lossy(&cred.identity).into()
                     }).collect())
             } else {
-                Err(EvalAltResult::ErrorRuntime("Unknown group!".into()))
+                Err("Unknown group!".into())
             }
         },
     );
@@ -224,7 +158,7 @@ pub fn register_functions(
     //
     // list()
     let s = state.clone();
-    engine.register_fn("list", move || -> RhaiResult<Vec<String>> {
+    engine.register_fn("list", |s: Arc<Mutex<State>>| move || -> Result<Vec<String>, String> {
         let state = s.lock().unwrap();
         Ok(state.groups.keys().map(|x| x.clone()).collect())
     });
@@ -235,12 +169,12 @@ pub fn register_functions(
     let s = state.clone();
     engine.register_fn(
         "load",
-        move |user_name: String| -> RhaiResult<()> {
+        |s: Arc<Mutex<State>>| move |user_name: String| -> Result<(), String> {
             let mut state = s.lock().unwrap();
             let file = File::open(format!("{}.state", user_name))
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+                .map_err(|e| e.to_string())?;
             *state = serde_json::from_reader(file)
-                .map_err(|e| EvalAltResult::ErrorRuntime(e.to_string()))?;
+                .map_err(|e| e.to_string())?;
             println!("Loaded {}", state.name);
             Ok(())
         },
@@ -261,14 +195,15 @@ pub fn register_functions(
 fn add_to_group(
     settings: &Settings,
     client: &reqwest::Client,
-    state: &mut State,
+    st: Arc<Mutex<State>>,
     group_id: String,
     user_name: String,
 ) -> Result<(), String> {
+    let mut state = st.lock().unwrap();
     if let hash_map::Entry::Occupied(entry_group_state) =
         state.groups.entry(group_id.clone())
     {
-        let mut group_state = entry_group_state.into_mut();
+        let group_state = entry_group_state.into_mut();
         // Read user info
         let credential = read_codec(format!("{}.pub", user_name))
             .map_err(|e| e.to_string())?;
@@ -302,14 +237,16 @@ fn add_to_group(
     }
 }
 
-fn join_group(state: &mut State, group_id: String) -> Result<(), String> {
+fn join_group(st: Arc<Mutex<State>>, group_id: String) -> Result<(), String> {
+    let mut state = st.lock().unwrap();
+    let state_name = state.name.clone();
     let identity = state.identity.clone();
     if let hash_map::Entry::Vacant(entry_group_state) =
         state.groups.entry(group_id.clone())
     {
         // Import the group
         let welcome: messages::Welcome =
-            read_codec(format!("{}_{}.welcome", group_id, state.name))
+            read_codec(format!("{}_{}.welcome", group_id, state_name))
                 .map_err(|e| e.to_string())?;
         let group_crypto =
             group::Group::new_from_welcome(identity, &welcome);
@@ -334,7 +271,7 @@ fn do_update(
     if let hash_map::Entry::Occupied(entry_group_state) =
         state.groups.entry(group_id.clone())
     {
-        let mut group_state = entry_group_state.into_mut();
+        let group_state = entry_group_state.into_mut();
         let update_op = messages::GroupOperation {
             msg_type: messages::GroupOperationType::Update,
             group_operation: messages::GroupOperationValue::Update(
@@ -366,7 +303,7 @@ fn remove_from_group(
     if let hash_map::Entry::Occupied(entry_group_state) =
         state.groups.entry(group_id.clone())
     {
-        let mut group_state = entry_group_state.into_mut();
+        let group_state = entry_group_state.into_mut();
         // Find the user; we can't find them by username because we don't
         // get usernames from add operations, so we have to look at the key
         let credential: keys::BasicCredential =
@@ -404,5 +341,28 @@ fn remove_from_group(
         }
     } else {
         Err("Group doesn't exist!".into())
+    }
+}
+
+fn create_group(state: Arc<Mutex<State>>, group_id: String) -> Result<(), String> {
+    let mut st = state.lock().unwrap();
+    let identity = st.identity.clone();
+    let credential = st.credential.clone();
+    match st.groups.entry(group_id) {
+        hash_map::Entry::Occupied(_) => {
+            Err("Group already exists!".into())
+        }
+        hash_map::Entry::Vacant(slot) => {
+            let group_crypto = group::Group::new(
+                identity,
+                credential,
+                group::GroupId::random(),
+            );
+            slot.insert(GroupState {
+                next_blob: 0,
+                crypto: group_crypto,
+            });
+            Ok(())
+        }
     }
 }

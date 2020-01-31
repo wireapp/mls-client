@@ -78,10 +78,9 @@ fn main() {
         let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_ref());
-                match engine.eval_with_scope_boxed(&mut scope, &line) {
-                    Err(e) => println!("Error: {}", e),
-                    Ok(x) => println!("{:#?}", x),
+                rl.add_history_entry(&line);
+                if let Err(e) = engine.consume_with_scope(&mut scope, &line) {
+                    println!("Error: {}", e)
                 }
             }
             Err(ReadlineError::Interrupted) => {
