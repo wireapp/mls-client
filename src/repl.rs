@@ -15,7 +15,6 @@ use message::*;
 use polling::*;
 use state::*;
 use utils::*;
-use settings::*;
 
 pub fn register_types(engine: &mut Engine) {
     // All return types HAVE to be registered here, or else exception
@@ -26,6 +25,9 @@ pub fn register_types(engine: &mut Engine) {
     engine.register_type::<Vec<Blob<Message>>>();
     engine.register_type::<String>();
     engine.register_type::<Vec<String>>();
+
+    engine.register_type::<Result<(), String>>();
+    engine.register_type::<Result<Vec<Blob<Message>>, String>>();
 }
 
 // Create a blob.
@@ -35,150 +37,136 @@ fn blob(index: i64, content: Message) -> Blob<Message> {
     Blob { index, content }
 }
 
+// Post a blob without adding it to the group state (though it will be
+// added anyway when doing polling).
+//
+// send(group_id, blob)
+fn send(group_id: String, blob: Blob<Message>) -> Result<(), String> {
+    append_blob(group_id.as_str(), &blob).map_err(|err| err.to_string())
+}
+
+// Fetch all blobs without adding them to the group state.
+//
+// recv(group_id) -> Vec<Blob<Message>>
+// recv_from(group_id, from_index) -> Vec<Blob<Message>>
+// recv_to(group_id, to_index) -> Vec<Blob<Message>>
+// recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
+
+fn recv(group_id: String) -> Result<Vec<Blob<Message>>, String> {
+    get_blobs(group_id.as_str(), None, None).map_err(|err| err.to_string())
+}
+
+fn recv_from(group_id: String, from: i64) -> Result<Vec<Blob<Message>>, String> {
+    get_blobs(group_id.as_str(), Some(from), None).map_err(|err| err.to_string())
+}
+
+fn recv_to(group_id: String, to: i64) -> Result<Vec<Blob<Message>>, String> {
+    get_blobs(group_id.as_str(), None, Some(to)).map_err(|err| err.to_string())
+}
+
+fn recv_from_to(group_id: String, from: i64, to: i64) -> Result<Vec<Blob<Message>>, String> {
+    get_blobs(group_id.as_str(), Some(from), Some(to)).map_err(|err| err.to_string())
+}
+
 pub fn register_functions(
-    settings: &Settings,
-    client: &reqwest::Client,
     state: Arc<Mutex<State>>,
     engine: &mut Engine,
 ) {
-
     engine.register_fn("blob", blob);
-
-    // Post a blob without adding it to the group state (though it will be
-    // added anyway when doing polling).
-    //
-    // send(group_id, blob)
-    let send = |settings, client| move |group_id: String, blob: Blob<Message>|
-        append_blob(settings, client, group_id.as_str(), &blob);
     engine.register_fn("send", send);
-
-    // Fetch all blobs without adding them to the group state.
-    //
-    // recv(group_id) -> Vec<Blob<Message>>
-    // recv_from(group_id, from_index) -> Vec<Blob<Message>>
-    // recv_to(group_id, to_index) -> Vec<Blob<Message>>
-    // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
-
-    let recv =  |settings, client| move |group_id: String|
-        get_blobs(settings, client, group_id.as_str(), None, None);
     engine.register_fn("recv", recv);
-
-    let recv_from = |settings, client| move |group_id: String, from: i64|
-        get_blobs(settings, client, group_id.as_str(), Some(from), None);
     engine.register_fn("recv_from", recv_from);
-
-    let recv_to = |settings, client| move |group_id: String, to: i64|
-        get_blobs(settings, client, group_id.as_str(), None, Some(to));
     engine.register_fn("recv_to", recv_to);
-
-    let recv_from_to = |settings, client| move |group_id: String, from: i64, to: i64|
-        get_blobs(settings, client, group_id.as_str(), Some(from), Some(to));
     engine.register_fn("recv_from_to", recv_from_to);
 
     // Create a group with the user as a single member.
     //
     // create(group_id)
-    engine.register_fn("create", |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
+    let create_closure = |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
         create_group(state.clone(), group_id)
-    });
+    };
+    engine.register_fn("create", create_closure(state.clone()));
 
     // Add a user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
     // `<user>.init`. Saves the welcome package to `<group>_<user>.welcome`.
     //
     // add(group_id, user_name)
-    let _c = client.clone();
-    let _set = settings.clone();
+    let add_closure = |state: Arc<Mutex<State>>| move |group_id: String, user_name: String| -> Result<(), String> {
+        add_to_group(state.clone(), group_id, user_name)
+    };
     engine.register_fn(
-        "add",
-        |state: Arc<Mutex<State>>, _c: reqwest::Client, _set: Settings| move |group_id: String, user_name: String| -> Result<(), String> {
-            add_to_group(&_set, &_c, state.clone(), group_id, user_name)
-        },
+        "add", add_closure(state.clone())
     );
 
     // Join a group. The welcome file has to be present.
     //
     // join(group_id)
-    engine.register_fn("join", |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
+    let join_closure = |state: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
         join_group(state.clone(), group_id)
-    });
+    };
+    engine.register_fn("join", join_closure(state.clone()));
 
     // Do an update.
     //
     // update(group_id)
-    let s = state.clone();
-    let c = client.clone();
-    let set = settings.clone();
-    engine.register_fn(
-        "update",
-        |s: Arc<Mutex<State>>, c: reqwest::Client, set: Settings| move |group_id: String| -> Result<(), String> {
-            let mut state = s.lock().unwrap();
-            do_update(&set, &c, &mut state, group_id)
-        },
-    );
+    let update_closure = |s: Arc<Mutex<State>>| move |group_id: String| -> Result<(), String> {
+        let mut state = s.lock().unwrap();
+        do_update(&mut state, group_id)
+    };
+    engine.register_fn("update",update_closure(state.clone()));
 
     // Remove a user from the group. Assumes that the user's data is stored
     // in `<user>.pub` and `<user>.init`.
     //
     // remove(group_id, user_name)
-    let s = state.clone();
-    let c = client.clone();
-    let set = settings.clone();
-    engine.register_fn(
-        "remove",
-        |s: Arc<Mutex<State>>, c: reqwest::Client, set: Settings| move |group_id: String, user_name: String| -> Result<(), String> {
-            let mut state = s.lock().unwrap();
-            remove_from_group(&set, &c, &mut state, group_id, user_name)
-        },
-    );
+    let remove_closure = |s: Arc<Mutex<State>>| move |group_id: String, user_name: String| -> Result<(), String> {
+        let mut state = s.lock().unwrap();
+        remove_from_group(&mut state, group_id, user_name)
+    };
+    engine.register_fn("remove", remove_closure(state.clone()));
 
     // See group's roster.
     //
     // roster(group_id)
-    let s = state.clone();
-    engine.register_fn(
-        "roster",
-        |s: Arc<Mutex<State>>| move |group_id: String| -> Result<Vec<String>, String> {
-            let state = s.lock().unwrap();
-            if let Some(group_state) = state.groups.get(&group_id) {
-                Ok(group_state
-                    .crypto
-                    .get_members()
-                    .iter()
-                    .map(|cred| {
-                        String::from_utf8_lossy(&cred.identity).into()
-                    }).collect())
-            } else {
-                Err("Unknown group!".into())
-            }
-        },
-    );
+    let roster_closure = |s: Arc<Mutex<State>>| move |group_id: String| -> Result<Vec<String>, String> {
+        let state = s.lock().unwrap();
+        if let Some(group_state) = state.groups.get(&group_id) {
+            Ok(group_state
+                .crypto
+                .get_members()
+                .iter()
+                .map(|cred| {
+                    String::from_utf8_lossy(&cred.identity).into()
+                }).collect())
+        } else {
+            Err("Unknown group!".into())
+        }
+    };
+    engine.register_fn("roster", roster_closure(state.clone()));
 
     // List groups.
     //
     // list()
-    let s = state.clone();
-    engine.register_fn("list", |s: Arc<Mutex<State>>| move || -> Result<Vec<String>, String> {
+    let list_closure = |s: Arc<Mutex<State>>| move || -> Result<Vec<String>, String> {
         let state = s.lock().unwrap();
         Ok(state.groups.keys().map(|x| x.clone()).collect())
-    });
+    };
+    engine.register_fn("list", list_closure(state.clone()));
 
     // Load state from disk (from `<user>.state`).
     //
     // load(user_name)
-    let s = state.clone();
-    engine.register_fn(
-        "load",
-        |s: Arc<Mutex<State>>| move |user_name: String| -> Result<(), String> {
-            let mut state = s.lock().unwrap();
-            let file = File::open(format!("{}.state", user_name))
-                .map_err(|e| e.to_string())?;
-            *state = serde_json::from_reader(file)
-                .map_err(|e| e.to_string())?;
-            println!("Loaded {}", state.name);
-            Ok(())
-        },
-    );
+    let load_closure = |s: Arc<Mutex<State>>| move |user_name: String| -> Result<(), String> {
+        let mut state = s.lock().unwrap();
+        let file = File::open(format!("{}.state", user_name))
+            .map_err(|e| e.to_string())?;
+        *state = serde_json::from_reader(file)
+            .map_err(|e| e.to_string())?;
+        println!("Loaded {}", state.name);
+        Ok(())
+    };
+    engine.register_fn("load", load_closure(state.clone()));
 
     // Quit the program.
     //
@@ -193,8 +181,6 @@ pub fn register_functions(
 }
 
 fn add_to_group(
-    settings: &Settings,
-    client: &reqwest::Client,
     st: Arc<Mutex<State>>,
     group_id: String,
     user_name: String,
@@ -224,7 +210,7 @@ fn add_to_group(
         process_message(&group_id, group_state, blob.clone());
         // Send the operation;
         // TODO restart if sending fails
-        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
+        append_blob(&group_id, &blob).map_err(|e| e.to_string())?;
         // Save the welcome package
         write_codec(
             format!("{}_{}.welcome", group_id, user_name),
@@ -263,8 +249,6 @@ fn join_group(st: Arc<Mutex<State>>, group_id: String) -> Result<(), String> {
 }
 
 fn do_update(
-    settings: &Settings,
-    client: &reqwest::Client,
     state: &mut State,
     group_id: String,
 ) -> Result<(), String> {
@@ -286,7 +270,7 @@ fn do_update(
         };
         process_message(&group_id, group_state, blob.clone());
         // TODO: we should try resending the blob if the sending fails.
-        append_blob(&settings, client, &group_id, &blob).map_err(|e| e.to_string())?;
+        append_blob(&group_id, &blob).map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err("Group doesn't exist!".into())
@@ -294,8 +278,6 @@ fn do_update(
 }
 
 fn remove_from_group(
-    settings: &Settings,
-    client: &reqwest::Client,
     state: &mut State,
     group_id: String,
     user_name: String,
@@ -333,8 +315,7 @@ fn remove_from_group(
             process_message(&group_id, group_state, blob.clone());
             // Send the operation;
             // TODO restart if sending fails
-            append_blob(&settings, client, &group_id, &blob)
-                .map_err(|e| e.to_string())?;
+            append_blob(&group_id, &blob).map_err(|e| e.to_string())?;
             Ok(())
         } else {
             Err("User not found!".into())

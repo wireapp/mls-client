@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use client::*;
 use message::*;
 use state::*;
-use settings::*;
 
 /// Process a single message.
 pub fn process_message(
@@ -35,12 +34,12 @@ pub fn process_message(
 ///
 /// TODO this is hacky, doesn't belong here, and dumping unprotected private
 /// keys isn't the best idea, too.
-pub fn poll(settings: &Settings, client: &reqwest::Client, state: Arc<Mutex<State>>) {
+pub fn poll(state: Arc<Mutex<State>>) {
     let mut state = state.lock().unwrap();
     // Download blobs
     for (group_id, group_state) in state.groups.iter_mut() {
         let blobs =
-            get_blobs(settings, client, group_id, Some(group_state.next_blob), None)
+            get_blobs(group_id, Some(group_state.next_blob), None)
                 .unwrap();
         for blob in blobs {
             process_message(&group_id, group_state, blob)

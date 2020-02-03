@@ -3,8 +3,10 @@
 extern crate reqwest;
 
 use serde::Serialize;
-use settings::*;
 use message::Message;
+
+use super::SETTINGS;
+use super::CLIENT;
 
 /// A blob, intended to be stored by the server. We can put any JSON we want
 /// into blobs.
@@ -16,14 +18,12 @@ pub struct Blob<T> {
 
 /// Store a blob for a specific group.
 pub fn append_blob<T: Serialize>(
-    settings: &Settings,
-    client: &reqwest::Client,
     group_id: &str,
     blob: &Blob<T>,
 ) -> reqwest::Result<()> {
-    client
+    CLIENT
         .post(
-            format!("{}/groups/{}/blobs", settings.server, group_id)
+            format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
                 .as_str(),
         ).json(blob)
         .send()?
@@ -33,14 +33,12 @@ pub fn append_blob<T: Serialize>(
 
 /// Receive all blobs for a specific groups.
 pub fn get_blobs(
-    settings: &Settings,
-    client: &reqwest::Client,
     group_id: &str,
     from: Option<i64>,
     to: Option<i64>,
 ) -> reqwest::Result<Vec<Blob<Message>>> {
-    let mut req = client.get(
-        format!("{}/groups/{}/blobs", settings.server, group_id)
+    let mut req = CLIENT.get(
+        format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
             .as_str(),
     );
     if let Some(x) = from {

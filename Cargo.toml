@@ -12,6 +12,7 @@ rustyline = "6.0.0"
 names = "0.11.0"
 config = "0.9"
 rhai = "0.9.1"
+lazy_static="1.4.0"
 
 # The underlying MLS algorithm implementation
 [dependencies.melissa]

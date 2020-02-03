@@ -16,6 +16,7 @@ extern crate rhai;
 extern crate rustyline;
 extern crate serde;
 extern crate config;
+extern crate lazy_static;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -29,13 +30,16 @@ use state::*;
 use settings::*;
 use utils::*;
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref SETTINGS: Settings = Settings::new().unwrap();
+    pub static ref CLIENT: reqwest::Client = reqwest::Client::new();
+}
+
 fn main() {
     // Read settings
-    let settings = Settings::new().unwrap();
-    println!("{:?}", settings);
-
-    // HTTP client instance
-    let client = reqwest::Client::new();
+    println!("{:?}", SETTINGS.server);
 
     // REPL instances
     let mut engine = rhai::Engine::new();
@@ -60,17 +64,15 @@ fn main() {
     }
 
     // Set up polling
-    let c = client.clone();
     let s = state.clone();
-    let set = settings.clone();
     thread::spawn(move || loop {
-        poll(&set, &c, s.clone());
+        poll(s.clone());
         thread::sleep(Duration::from_secs(1));
     });
 
     // Prepare the REPL
     register_types(&mut engine);
-    register_functions(&settings, &client, state.clone(), &mut engine);
+    register_functions(state.clone(), &mut engine);
 
     // Start the REPL
     let mut rl = Editor::<()>::new();
