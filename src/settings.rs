@@ -1,11 +1,11 @@
 extern crate lazy_static;
 
-use config::{ConfigError, Config, File};
 use self::lazy_static::lazy_static;
+use config::{Config, ConfigError, File};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    pub server: String
+    pub server: String,
 }
 
 impl Settings {

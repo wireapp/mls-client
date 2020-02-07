@@ -1,7 +1,7 @@
 use melissa::{group, keys};
 use std::collections::HashMap;
 
-use utils::*;
+use crate::utils::{deserialize_codec, serialize_codec};
 
 /// Group-related state that we track
 #[derive(Clone, Serialize, Deserialize)]

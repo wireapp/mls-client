@@ -1,7 +1,7 @@
 use melissa::messages;
 use std::fmt;
 
-use utils::*;
+use crate::utils::{deserialize_codec, serialize_codec};
 
 /// Any kind of message stored by the server.
 #[derive(Clone, Serialize, Deserialize)]

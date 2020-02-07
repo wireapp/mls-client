@@ -1,12 +1,10 @@
 //! Low-level logic for interacting with the server.
 
-extern crate reqwest;
-
+use crate::message::Message;
 use serde::Serialize;
-use message::Message;
 
-use super::SETTINGS;
 use super::CLIENT;
+use super::SETTINGS;
 
 /// A blob, intended to be stored by the server. We can put any JSON we want
 /// into blobs.
@@ -25,7 +23,8 @@ pub fn append_blob<T: Serialize>(
         .post(
             format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
                 .as_str(),
-        ).json(blob)
+        )
+        .json(blob)
         .send()?
         .error_for_status()
         .map(|_| ())
@@ -38,8 +37,7 @@ pub fn get_blobs(
     to: Option<i64>,
 ) -> reqwest::Result<Vec<Blob<Message>>> {
     let mut req = CLIENT.get(
-        format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
-            .as_str(),
+        format!("{}/groups/{}/blobs", SETTINGS.server, group_id).as_str(),
     );
     if let Some(x) = from {
         req = req.query(&[("from", x)])

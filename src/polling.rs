@@ -4,9 +4,9 @@ extern crate serde_json;
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 
-use client::*;
-use message::*;
-use state::*;
+use crate::client::{get_blobs, Blob};
+use crate::message::Message;
+use crate::state::{GroupState, State};
 
 /// Process a single message.
 pub fn process_message(
@@ -15,16 +15,17 @@ pub fn process_message(
     message: Blob<Message>,
 ) {
     println!("{}: got {:?}", group_id, message);
-    // TODO: we skip blobs that are older than what we've seen, but we don't
-    // check that they correspond to what we've seen.
-    if message.index == group_state.next_blob {
-        group_state.crypto.process_handshake(message.content.0);
-        group_state.next_blob += 1;
-    } else if message.index > group_state.next_blob {
-        println!(
+    // TODO: we skip blobs that are older than what we've seen, but we don't check that they correspond to what we've seen.
+    match message.index {
+        ix if ix == group_state.next_blob => {
+            group_state.crypto.process_handshake(message.content.0);
+            group_state.next_blob += 1;
+        }
+        ix if ix > group_state.next_blob => println!(
             "Blob from the future: expected index {}, got {}",
             group_state.next_blob, message.index
-        )
+        ),
+        _ => {}
     }
 }
 
@@ -39,8 +40,7 @@ pub fn poll(state: Arc<Mutex<State>>) {
     // Download blobs
     for (group_id, group_state) in state.groups.iter_mut() {
         let blobs =
-            get_blobs(group_id, Some(group_state.next_blob), None)
-                .unwrap();
+            get_blobs(group_id, Some(group_state.next_blob), None).unwrap();
         for blob in blobs {
             process_message(&group_id, group_state, blob)
         }
