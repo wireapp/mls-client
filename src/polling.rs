@@ -5,14 +5,13 @@ use std::fs::File;
 use std::sync::{Arc, Mutex};
 
 use crate::client::{get_blobs, Blob};
-use crate::message::Message;
 use crate::state::{GroupState, State};
 
 /// Process a single message.
 pub fn process_message(
     group_id: &str,
     group_state: &mut GroupState,
-    message: Blob<Message>,
+    message: Blob,
 ) {
     println!("{}: got {:?}", group_id, message);
     // TODO: we skip blobs that are older than what we've seen, but we don't check that they correspond to what we've seen.
@@ -41,7 +40,7 @@ pub fn poll(state: Arc<Mutex<State>>) {
     for (group_id, group_state) in state.groups.iter_mut() {
         let blobs =
             get_blobs(group_id, Some(group_state.next_blob), None).unwrap();
-        for blob in blobs {
+        for blob in blobs.blobs {
             process_message(&group_id, group_state, blob)
         }
     }

@@ -9,15 +9,20 @@ use super::SETTINGS;
 /// A blob, intended to be stored by the server. We can put any JSON we want
 /// into blobs.
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Blob<T> {
+pub struct Blob {
     pub index: i64,
-    pub content: T,
+    pub content: Message,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Blobs {
+    pub blobs: Vec<Blob>
 }
 
 /// Store a blob for a specific group.
-pub fn append_blob<T: Serialize>(
+pub fn append_blob(
     group_id: &str,
-    blob: &Blob<T>,
+    blob: &Blob,
 ) -> reqwest::Result<()> {
     CLIENT
         .post(
@@ -35,7 +40,7 @@ pub fn get_blobs(
     group_id: &str,
     from: Option<i64>,
     to: Option<i64>,
-) -> reqwest::Result<Vec<Blob<Message>>> {
+) -> reqwest::Result<Blobs> {
     let mut req = CLIENT.get(
         format!("{}/groups/{}/blobs", SETTINGS.server, group_id).as_str(),
     );

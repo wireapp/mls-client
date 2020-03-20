@@ -10,7 +10,7 @@ use std::fs::File;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 
-use crate::client::{append_blob, get_blobs, Blob};
+use crate::client::{append_blob, get_blobs, Blob, Blobs};
 use crate::message::Message;
 use crate::polling::process_message;
 use crate::state::{GroupState, State};
@@ -21,19 +21,19 @@ pub fn register_types(engine: &mut Engine) {
     // handling won't work.
     engine.register_type::<()>();
     engine.register_type::<Message>();
-    engine.register_type::<Blob<Message>>();
-    engine.register_type::<Vec<Blob<Message>>>();
+    engine.register_type::<Blob>();
+    engine.register_type::<Blobs>();
     engine.register_type::<String>();
     engine.register_type::<Vec<String>>();
 
     engine.register_type::<Result<(), String>>();
-    engine.register_type::<Result<Vec<Blob<Message>>, String>>();
+    engine.register_type::<Result<Blobs, String>>();
 }
 
 // Create a blob.
 //
 // blob(index, message) -> Blob<Message>
-fn blob(index: i64, content: Message) -> Blob<Message> {
+fn blob(index: i64, content: Message) -> Blob {
     Blob { index, content }
 }
 
@@ -41,7 +41,7 @@ fn blob(index: i64, content: Message) -> Blob<Message> {
 // added anyway when doing polling).
 //
 // send(group_id, blob)
-fn send(group_id: String, blob: Blob<Message>) -> Result<(), String> {
+fn send(group_id: String, blob: Blob) -> Result<(), String> {
     append_blob(group_id.as_str(), &blob).map_err(|err| err.to_string())
 }
 
@@ -52,23 +52,27 @@ fn send(group_id: String, blob: Blob<Message>) -> Result<(), String> {
 // recv_to(group_id, to_index) -> Vec<Blob<Message>>
 // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
 
-fn recv(group_id: String) -> Result<Vec<Blob<Message>>, String> {
-    get_blobs(group_id.as_str(), None, None).map_err(|err| err.to_string())
+fn recv(group_id: String) -> Result<Vec<Blob>, String> {
+    get_blobs(group_id.as_str(), None, None)
+        .map(|blobs| blobs.blobs)
+        .map_err(|err| err.to_string())
 }
 
 fn recv_from(
     group_id: String,
     from: i64,
-) -> Result<Vec<Blob<Message>>, String> {
+) -> Result<Vec<Blob>, String> {
     get_blobs(group_id.as_str(), Some(from), None)
+        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
 fn recv_to(
     group_id: String,
     to: i64,
-) -> Result<Vec<Blob<Message>>, String> {
+) -> Result<Vec<Blob>, String> {
     get_blobs(group_id.as_str(), None, Some(to))
+        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
@@ -76,8 +80,9 @@ fn recv_from_to(
     group_id: String,
     from: i64,
     to: i64,
-) -> Result<Vec<Blob<Message>>, String> {
+) -> Result<Vec<Blob>, String> {
     get_blobs(group_id.as_str(), Some(from), Some(to))
+        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
