@@ -12,8 +12,8 @@ Cargo.lock
 *.init
 *.pub
 *.state
+*.welcome
 
 /.idea/
 *.iml
-*.toml
 /docs/

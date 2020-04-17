@@ -8,7 +8,7 @@ use rhai::*;
 use std::collections::hash_map;
 use std::fs::File;
 use std::process::exit;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::client::{append_blob, get_blobs, Blob, Blobs};
 use crate::message::Message;
@@ -112,9 +112,23 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
     let add_closure = |state: Arc<Mutex<State>>| {
         move |group_id: String, user_name: String| -> Result<(), String> {
             add_to_group(state.clone(), group_id, user_name)
+                .map_err(|err| { println!("{}", err); err } )
         }
     };
     engine.register_fn("add", add_closure(state.clone()));
+
+    // Add the current user to a group and generate an invitation file for them.
+    // Assumes that the user's data is stored in `<user>.pub` and
+    // `<user>.init`. Saves the welcome package to `<group>_<user>.welcome`.
+    //
+    // add_self(group_id)
+    let add_self_closure = |state: Arc<Mutex<State>>| {
+        move |group_id: String| -> Result<(), String> {
+            add_self_to_group(state.clone(), group_id)
+                .map_err(|err| { println!("{}", err); err } )
+        }
+    };
+    engine.register_fn("add_self", add_self_closure(state.clone()));
 
     // Join a group. The welcome file has to be present.
     //
@@ -210,12 +224,30 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
     });
 }
 
+fn add_self_to_group(
+    st: Arc<Mutex<State>>,
+    group_id: String,
+) -> Result<(), String> {
+    let mut state = st.lock().unwrap();
+    let name = state.name.clone();
+    _add_to_group(&mut state, group_id, name.as_str())
+}
+
 fn add_to_group(
     st: Arc<Mutex<State>>,
     group_id: String,
     user_name: String,
 ) -> Result<(), String> {
     let mut state = st.lock().unwrap();
+    _add_to_group(&mut state, group_id, user_name.as_str())
+}
+
+fn _add_to_group(
+    state: &mut MutexGuard<State>,
+    group_id: String,
+    user_name: &str,
+) -> Result<(), String> {
+    println!("add to group {}, {}", group_id, user_name);
     if let hash_map::Entry::Occupied(entry_group_state) =
         state.groups.entry(group_id.clone())
     {

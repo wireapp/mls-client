@@ -2,6 +2,7 @@
 
 use crate::message::Message;
 use serde::Serialize;
+use serde_json::json;
 
 use super::CLIENT;
 use super::SETTINGS;
@@ -24,12 +25,15 @@ pub fn append_blob(
     group_id: &str,
     blob: &Blob,
 ) -> reqwest::Result<()> {
+    let json = json!({
+        "index": blob.index,
+        "content": serde_json::to_string(&blob.content).unwrap()
+    });
+
+    println!("append_blob: {}/groups/{}/blobs, blob: {:?}", SETTINGS.server, group_id, json);
     CLIENT
-        .post(
-            format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
-                .as_str(),
-        )
-        .json(blob)
+        .post(format!("{}/groups/{}/blobs", SETTINGS.server, group_id).as_str())
+        .json(&json)
         .send()?
         .error_for_status()
         .map(|_| ())
@@ -41,6 +45,7 @@ pub fn get_blobs(
     from: Option<i64>,
     to: Option<i64>,
 ) -> reqwest::Result<Blobs> {
+    println!("get_blobs: {}/groups/{}/blobs", SETTINGS.server, group_id);
     let mut req = CLIENT.get(
         format!("{}/groups/{}/blobs", SETTINGS.server, group_id).as_str(),
     );
