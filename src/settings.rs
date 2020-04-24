@@ -1,6 +1,5 @@
 extern crate lazy_static;
 
-use self::lazy_static::lazy_static;
 use config::{Config, ConfigError, File};
 
 #[derive(Debug, Deserialize, Clone)]
@@ -16,6 +15,3 @@ impl Settings {
     }
 }
 
-lazy_static! {
-    pub static ref SETTINGS: Settings = Settings::new().unwrap();
-}

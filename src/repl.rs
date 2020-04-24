@@ -16,6 +16,8 @@ use crate::polling::process_message;
 use crate::state::{GroupState, State};
 use crate::utils::{read_codec, write_codec};
 
+use super::POLLING;
+
 pub fn register_types(engine: &mut Engine) {
     // All return types HAVE to be registered here, or else exception
     // handling won't work.
@@ -210,7 +212,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             Ok(())
         }
     };
-    engine.register_fn("load", load_closure(state));
+    engine.register_fn("load", load_closure(state.clone()));
 
     // Quit the program.
     //
@@ -221,6 +223,18 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
     });
     engine.register_fn("exit", || {
         exit(0);
+    });
+
+    // Start querying the server for data
+    engine.register_fn("start_poll", move || {
+        let mut poll = POLLING.lock().unwrap();
+        poll.start_polling(state.clone());
+    });
+
+    // Stop querying the server for data
+    engine.register_fn("stop_poll", || {
+        let mut poll = POLLING.lock().unwrap();
+        poll.stop_polling();
     });
 }
 

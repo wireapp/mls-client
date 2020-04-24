@@ -21,17 +21,17 @@ extern crate serde;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use settings::Settings;
 use state::State;
 
 use lazy_static::lazy_static;
+use crate::polling::Polling;
 
 lazy_static! {
     pub static ref SETTINGS: Settings = Settings::new().unwrap();
     pub static ref CLIENT: reqwest::Client = reqwest::Client::new();
+    pub static ref POLLING: Arc<Mutex<Polling>> =  Arc::new(Mutex::new(Polling::new()));
 }
 
 fn main() {
@@ -65,11 +65,11 @@ fn main() {
     }
 
     // Set up polling
-    let s = state.clone();
+/*    let s = state.clone();
     thread::spawn(move || loop {
         polling::poll(s.clone());
         thread::sleep(Duration::from_secs(1));
-    });
+    });*/
 
     // Prepare the REPL
     repl::register_types(&mut engine);
