@@ -8,9 +8,10 @@ use std::time::Duration;
 
 use crate::client::{get_blobs, Blob};
 use crate::state::{GroupState, State};
+use std::sync::mpsc::{Sender, channel, TryRecvError};
 
 pub struct Polling {
-    handle: Option<thread::JoinHandle<()>>
+    handle: Option<Sender<()>>
 }
 
 impl Polling {
@@ -19,18 +20,34 @@ impl Polling {
     }
 
     pub fn start_polling(&mut self, state: Arc<Mutex<State>>) {
-        self.stop_polling();
-        self.handle = Option::Some(thread::spawn(move || loop {
-            Polling::poll(state.clone());
-            thread::sleep(Duration::from_secs(1));
-        }));
+        if self.handle.is_some() {
+            self.stop_polling();
+        }
+        self.handle = Option::Some(Polling::spawn(state));
     }
 
     pub fn stop_polling(&mut self) {
         if let Some(h) = self.handle.take() {
-            h.join().expect("Handle panicked during joining");
-            // TODO: this doesn't work yet. we need a way to stop the thread before it can be joined.
+            drop(h);
         }
+    }
+
+    fn spawn(state: Arc<Mutex<State>>) -> Sender<()> {
+        let (sender, receiver) = channel();
+        thread::spawn(move || {
+            loop {
+                match receiver.try_recv() {
+                    Err(TryRecvError::Disconnected) => break,
+                    _ => {
+                        Polling::poll(state.clone());
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+            }
+            println!("Polling stopped");
+        });
+
+        sender
     }
 
     /// Poll for messages in subscribed groups and perform scheduled updates.
