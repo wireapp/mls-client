@@ -18,8 +18,6 @@ extern crate rhai;
 extern crate rustyline;
 extern crate serde;
 
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 use std::sync::{Arc, Mutex};
 
 use settings::Settings;
@@ -27,20 +25,18 @@ use state::State;
 
 use lazy_static::lazy_static;
 use crate::polling::Polling;
+use crate::repl::REPLDictionary;
 
 lazy_static! {
     pub static ref SETTINGS: Settings = Settings::new().unwrap();
     pub static ref CLIENT: reqwest::Client = reqwest::Client::new();
     pub static ref POLLING: Arc<Mutex<Polling>> =  Arc::new(Mutex::new(Polling::new()));
+    pub static ref REPL: Arc<Mutex<repl::REPLDictionary>> = Arc::new(Mutex::new(REPLDictionary::new()));
 }
 
 fn main() {
     // Read settings
     println!("{:?}", SETTINGS.server);
-
-    // REPL instances
-    let mut engine = rhai::Engine::new();
-    let mut scope = rhai::Scope::new();
 
     // Local state
     let name = names::Generator::default().next().unwrap();
@@ -64,39 +60,14 @@ fn main() {
         println!("Wrote {}.pub and {}.init", state.name, state.name);
     }
 
-    // Set up polling
-/*    let s = state.clone();
-    thread::spawn(move || loop {
-        polling::poll(s.clone());
-        thread::sleep(Duration::from_secs(1));
-    });*/
-
+    // REPL instances
+    let mut engine = rhai::Engine::new();
     // Prepare the REPL
     repl::register_types(&mut engine);
     repl::register_functions(state, &mut engine);
 
     // Start the REPL
-    let mut rl = Editor::<()>::new();
-    loop {
-        let readline = rl.readline("> ");
-        match readline {
-            Ok(line) => {
-                rl.add_history_entry(&line);
-                if let Err(e) = engine.consume_with_scope(&mut scope, &line)
-                {
-                    println!("Error: {}", e)
-                }
-            }
-            Err(ReadlineError::Interrupted) => {
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                break;
-            }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
-        }
-    }
+    repl::start_repl(&mut engine);
 }
+
+

@@ -5,10 +5,12 @@ use melissa::group;
 use melissa::keys;
 use melissa::messages;
 use rhai::*;
-use std::collections::hash_map;
+use std::collections::{hash_map, HashMap};
 use std::fs::File;
 use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
+use rustyline::Editor;
+use rustyline::error::ReadlineError;
 
 use crate::client::{append_blob, get_blobs, Blob, Blobs};
 use crate::message::Message;
@@ -17,6 +19,58 @@ use crate::state::{GroupState, State};
 use crate::utils::{read_codec, write_codec};
 
 use super::POLLING;
+use super::REPL;
+
+#[derive(Clone, Copy, Debug)]
+pub enum REPLReturnType {
+    Unit,
+    Boolean,
+    Message,
+    Blob,
+    Blobs,
+    String,
+    Strings,
+    UnitResult,
+    BlobsResult,
+    StringsResult
+}
+
+impl Default for REPLReturnType {
+    fn default() -> Self {
+        REPLReturnType::Unit
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct REPLFunction {
+    pub name: &'static str,
+    pub return_type: REPLReturnType,
+    // TODO: add the actual function here
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct REPLDictionary(HashMap<&'static str, REPLFunction>);
+
+impl REPLDictionary {
+    pub fn new() -> REPLDictionary {
+        REPLDictionary(HashMap::new())
+    }
+
+    pub fn add(&mut self, name: &'static str, return_type: &REPLReturnType) {
+        self.0.insert(name, REPLFunction { name: name, return_type: return_type.clone()});
+    }
+
+    pub fn get_return_type(&self, name: &'static str) -> REPLReturnType {
+        self.0.get(name)
+            .expect(format!("No function with name: {}", name).as_str())
+            .return_type
+    }
+}
+
+fn register_fn(name: &'static str, return_type: &REPLReturnType) {
+    let mut repl = REPL.lock().unwrap();
+    repl.add(name, return_type);
+}
 
 pub fn register_types(engine: &mut Engine) {
     // All return types HAVE to be registered here, or else exception
@@ -30,6 +84,7 @@ pub fn register_types(engine: &mut Engine) {
 
     engine.register_type::<Result<(), String>>();
     engine.register_type::<Result<Blobs, String>>();
+    engine.register_type::<Result<Vec<String>, String>>()
 }
 
 // Create a blob.
@@ -54,27 +109,24 @@ fn send(group_id: String, blob: Blob) -> Result<(), String> {
 // recv_to(group_id, to_index) -> Vec<Blob<Message>>
 // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
 
-fn recv(group_id: String) -> Result<Vec<Blob>, String> {
+fn recv(group_id: String) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), None, None)
-        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
 fn recv_from(
     group_id: String,
     from: i64,
-) -> Result<Vec<Blob>, String> {
+) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), Some(from), None)
-        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
 fn recv_to(
     group_id: String,
     to: i64,
-) -> Result<Vec<Blob>, String> {
+) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), None, Some(to))
-        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
@@ -82,19 +134,25 @@ fn recv_from_to(
     group_id: String,
     from: i64,
     to: i64,
-) -> Result<Vec<Blob>, String> {
+) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), Some(from), Some(to))
-        .map(|blobs| blobs.blobs)
         .map_err(|err| err.to_string())
 }
 
 pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
+    // TODO: write a macro which can take any type of function, just us engine.register_fn
     engine.register_fn("blob", blob);
+    register_fn("blob", &REPLReturnType::Blob);
     engine.register_fn("send", send);
+    register_fn("send", &REPLReturnType::UnitResult);
     engine.register_fn("recv", recv);
+    register_fn("recv", &REPLReturnType::BlobsResult);
     engine.register_fn("recv_from", recv_from);
+    register_fn("recv_from", &REPLReturnType::BlobsResult);
     engine.register_fn("recv_to", recv_to);
+    register_fn("recv_to", &REPLReturnType::BlobsResult);
     engine.register_fn("recv_from_to", recv_from_to);
+    register_fn("recv_from_to", &REPLReturnType::BlobsResult);
 
     // Create a group with the user as a single member.
     //
@@ -105,6 +163,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("create", create_closure(state.clone()));
+    register_fn("create", &REPLReturnType::UnitResult);
 
     // Add a user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
@@ -118,6 +177,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("add", add_closure(state.clone()));
+    register_fn("add", &REPLReturnType::UnitResult);
 
     // Add the current user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
@@ -131,6 +191,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("add_self", add_self_closure(state.clone()));
+    register_fn("add_self", &REPLReturnType::UnitResult);
 
     // Join a group. The welcome file has to be present.
     //
@@ -141,6 +202,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("join", join_closure(state.clone()));
+    register_fn("join", &REPLReturnType::UnitResult);
 
     // Do an update.
     //
@@ -152,6 +214,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("update", update_closure(state.clone()));
+    register_fn("update", &REPLReturnType::UnitResult);
 
     // Remove a user from the group. Assumes that the user's data is stored
     // in `<user>.pub` and `<user>.init`.
@@ -164,6 +227,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("remove", remove_closure(state.clone()));
+    register_fn("remove", &REPLReturnType::UnitResult);
 
     // See group's roster.
     //
@@ -186,6 +250,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("roster", roster_closure(state.clone()));
+    register_fn("roster", &REPLReturnType::StringsResult);
 
     // List groups.
     //
@@ -197,6 +262,7 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("list", list_closure(state.clone()));
+    register_fn("list", &REPLReturnType::StringsResult);
 
     // Load state from disk (from `<user>.state`).
     //
@@ -213,29 +279,64 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         }
     };
     engine.register_fn("load", load_closure(state.clone()));
+    register_fn("load", &REPLReturnType::UnitResult);
 
     // Quit the program.
     //
     // quit()
     // exit()
-    engine.register_fn("quit", || {
-        exit(0);
-    });
-    engine.register_fn("exit", || {
-        exit(0);
-    });
+    engine.register_fn("quit", || { exit(0); });
+    register_fn("quit", &REPLReturnType::Unit);
+    engine.register_fn("exit", || { exit(0); });
+    register_fn("exit", &REPLReturnType::Unit);
 
     // Start querying the server for data
     engine.register_fn("start_poll", move || {
         let mut poll = POLLING.lock().unwrap();
         poll.start_polling(state.clone());
     });
+    register_fn("start_poll", &REPLReturnType::Unit);
 
     // Stop querying the server for data
     engine.register_fn("stop_poll", || {
         let mut poll = POLLING.lock().unwrap();
         poll.stop_polling();
     });
+    register_fn("stop_poll", &REPLReturnType::Unit);
+
+    engine.register_fn("is_polling", || {
+        let poll = POLLING.lock().unwrap();
+        poll.is_polling()
+    });
+    register_fn("is_polling", &REPLReturnType::Boolean);
+}
+
+pub fn start_repl(engine: &mut Engine) {
+    // Start the REPL
+    let mut scope = rhai::Scope::new();
+    let mut rl = Editor::<()>::new();
+    loop {
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(&line);
+                if let Err(e) = engine.consume_with_scope(&mut scope, &line)
+                {
+                    println!("Error: {}", e)
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
+        }
+    }
 }
 
 fn add_self_to_group(

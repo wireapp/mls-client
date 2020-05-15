@@ -32,6 +32,10 @@ impl Polling {
         }
     }
 
+    pub fn is_polling(&self) -> bool {
+        self.handle.is_some()
+    }
+
     fn spawn(state: Arc<Mutex<State>>) -> Sender<()> {
         let (sender, receiver) = channel();
         thread::spawn(move || {
@@ -44,7 +48,6 @@ impl Polling {
                     }
                 }
             }
-            println!("Polling stopped");
         });
 
         sender
@@ -52,10 +55,7 @@ impl Polling {
 
     /// Poll for messages in subscribed groups and perform scheduled updates.
     /// Also save state to disk.
-    /// TODO this is hacky, doesn't belong here, and dumping unprotected private
-    /// keys isn't the best idea, too.
     fn poll(state: Arc<Mutex<State>>) {
-        println!("poll");
         let mut state = state.lock().unwrap();
         // Download blobs
         for (group_id, group_state) in state.groups.iter_mut() {
