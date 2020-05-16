@@ -60,10 +60,72 @@ impl REPLDictionary {
         self.0.insert(name, REPLFunction { name: name, return_type: return_type.clone()});
     }
 
-    pub fn get_return_type(&self, name: &'static str) -> REPLReturnType {
-        self.0.get(name)
-            .expect(format!("No function with name: {}", name).as_str())
-            .return_type
+    fn get_starts_with(&self, input: &String) -> Option<REPLReturnType> {
+        self.0.iter().find_map(|(&name, &replf)|
+            if input.starts_with(name) {
+                Some(replf.return_type)
+            } else {
+                None
+            }
+        )
+    }
+
+    pub fn start(&self, engine: &mut Engine) {
+        // Start the REPL
+        let mut scope = rhai::Scope::new();
+        let mut rl = Editor::<()>::new();
+        loop {
+            let readline = rl.readline("> ");
+            match readline {
+                Ok(line) => {
+                    rl.add_history_entry(&line);
+                    let result = match self.get_starts_with(&line) {
+                        Some(REPLReturnType::Boolean) => {
+                            engine.eval_with_scope::<bool>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {}", res);
+                                    ()
+                                })
+                        }
+                        Some(REPLReturnType::String) => {
+                            engine.eval_with_scope::<String>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {}", res);
+                                    ()
+                                })
+                        }
+                        Some(REPLReturnType::StringsResult) => {
+                            engine.eval_with_scope::<Result<Vec<String>, String>>(&mut scope, &line)
+                                .map(|res| match res {
+                                    Ok(strings) => {
+                                        println!("res: {:?}", strings);
+                                    }
+                                    Err(e) => {
+                                        println!("Error: {}", e);
+                                    }
+                                })
+                        }
+                        _ => {
+                            engine.consume_with_scope(&mut scope, &line)
+                        }
+                    };
+                    if let Err(e) = result
+                    {
+                        println!("Error: {}", e)
+                    }
+                }
+                Err(ReadlineError::Interrupted) => {
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    break;
+                }
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -140,7 +202,7 @@ fn recv_from_to(
 }
 
 pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
-    // TODO: write a macro which can take any type of function, just us engine.register_fn
+    // TODO: write a macro which can take any type of function, just as engine.register_fn
     engine.register_fn("blob", blob);
     register_fn("blob", &REPLReturnType::Blob);
     engine.register_fn("send", send);
@@ -309,34 +371,6 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
         poll.is_polling()
     });
     register_fn("is_polling", &REPLReturnType::Boolean);
-}
-
-pub fn start_repl(engine: &mut Engine) {
-    // Start the REPL
-    let mut scope = rhai::Scope::new();
-    let mut rl = Editor::<()>::new();
-    loop {
-        let readline = rl.readline("> ");
-        match readline {
-            Ok(line) => {
-                rl.add_history_entry(&line);
-                if let Err(e) = engine.consume_with_scope(&mut scope, &line)
-                {
-                    println!("Error: {}", e)
-                }
-            }
-            Err(ReadlineError::Interrupted) => {
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                break;
-            }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
-        }
-    }
 }
 
 fn add_self_to_group(

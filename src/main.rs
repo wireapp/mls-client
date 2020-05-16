@@ -67,7 +67,7 @@ fn main() {
     repl::register_functions(state, &mut engine);
 
     // Start the REPL
-    repl::start_repl(&mut engine);
+    REPL.lock().unwrap().start(&mut engine);
 }
 
 
