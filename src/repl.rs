@@ -87,6 +87,27 @@ impl REPLDictionary {
                                     ()
                                 })
                         }
+                        Some(REPLReturnType::Message) => {
+                            engine.eval_with_scope::<Message>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {:?}", res);
+                                    ()
+                                })
+                        }
+                        Some(REPLReturnType::Blob) => {
+                            engine.eval_with_scope::<Blob>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {:?}", res);
+                                    ()
+                                })
+                        }
+                        Some(REPLReturnType::Blobs) => {
+                            engine.eval_with_scope::<Blobs>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {:?}", res);
+                                    ()
+                                })
+                        }
                         Some(REPLReturnType::String) => {
                             engine.eval_with_scope::<String>(&mut scope, &line)
                                 .map(|res| {
@@ -94,11 +115,38 @@ impl REPLDictionary {
                                     ()
                                 })
                         }
+                        Some(REPLReturnType::Strings) => {
+                            engine.eval_with_scope::<Vec<String>>(&mut scope, &line)
+                                .map(|res| {
+                                    println!("res: {:?}", res);
+                                    ()
+                                })
+                        }
+                        Some(REPLReturnType::UnitResult) => {
+                            engine.eval_with_scope::<Result<(), String>>(&mut scope, &line)
+                                .map(|res| match res {
+                                    Err(e) => {
+                                        println!("Error: {}", e);
+                                    }
+                                    _ => {}
+                                })
+                        }
                         Some(REPLReturnType::StringsResult) => {
                             engine.eval_with_scope::<Result<Vec<String>, String>>(&mut scope, &line)
                                 .map(|res| match res {
                                     Ok(strings) => {
                                         println!("res: {:?}", strings);
+                                    }
+                                    Err(e) => {
+                                        println!("Error: {}", e);
+                                    }
+                                })
+                        }
+                        Some(REPLReturnType::BlobsResult) => {
+                            engine.eval_with_scope::<Result<Blobs, String>>(&mut scope, &line)
+                                .map(|res| match res {
+                                    Ok(blobs) => {
+                                        println!("res: {:?}", blobs);
                                     }
                                     Err(e) => {
                                         println!("Error: {}", e);
