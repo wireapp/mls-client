@@ -1,16 +1,20 @@
+#![macro_use]
+
 extern crate reqwest;
 extern crate serde_json;
+
+use std::fmt;
 
 use melissa::group;
 use melissa::keys;
 use melissa::messages;
 use rhai::*;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::collections::{hash_map, HashMap};
 use std::fs::File;
 use std::process::exit;
 use std::sync::{Arc, Mutex, MutexGuard};
-use rustyline::Editor;
-use rustyline::error::ReadlineError;
 
 use crate::client::{append_blob, get_blobs, Blob, Blobs};
 use crate::message::Message;
@@ -20,6 +24,7 @@ use crate::utils::{read_codec, write_codec};
 
 use super::POLLING;
 use super::REPL;
+use serde::export::Formatter;
 
 #[derive(Clone, Copy, Debug)]
 pub enum REPLReturnType {
@@ -32,7 +37,7 @@ pub enum REPLReturnType {
     Strings,
     UnitResult,
     BlobsResult,
-    StringsResult
+    StringsResult,
 }
 
 impl Default for REPLReturnType {
@@ -41,145 +46,83 @@ impl Default for REPLReturnType {
     }
 }
 
+impl fmt::Display for REPLReturnType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct REPLFunction {
     pub name: &'static str,
+    pub description: &'static str,
     pub return_type: REPLReturnType,
     // TODO: add the actual function here
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct REPLDictionary(HashMap<&'static str, REPLFunction>);
+pub struct REPLDictionary(pub HashMap<&'static str, REPLFunction>);
 
 impl REPLDictionary {
     pub fn new() -> REPLDictionary {
         REPLDictionary(HashMap::new())
     }
 
-    pub fn add(&mut self, name: &'static str, return_type: &REPLReturnType) {
-        self.0.insert(name, REPLFunction { name: name, return_type: return_type.clone()});
+    pub fn add(
+        &mut self,
+        name: &'static str,
+        return_type: &REPLReturnType,
+    ) {
+        self.0.insert(
+            name,
+            REPLFunction {
+                name: name,
+                description: "",
+                return_type: return_type.clone(),
+            },
+        );
     }
 
     fn get_starts_with(&self, input: &String) -> Option<REPLReturnType> {
-        self.0.iter().find_map(|(&name, &replf)|
+        self.0.iter().find_map(|(&name, &replf)| {
             if input.starts_with(name) {
                 Some(replf.return_type)
             } else {
                 None
             }
-        )
+        })
     }
+}
 
-    pub fn start(&self, engine: &mut Engine) {
-        // Start the REPL
-        let mut scope = rhai::Scope::new();
-        let mut rl = Editor::<()>::new();
-        loop {
-            let readline = rl.readline("> ");
-            match readline {
-                Ok(line) => {
-                    rl.add_history_entry(&line);
-                    let result = match self.get_starts_with(&line) {
-                        Some(REPLReturnType::Boolean) => {
-                            engine.eval_with_scope::<bool>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::Message) => {
-                            engine.eval_with_scope::<Message>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {:?}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::Blob) => {
-                            engine.eval_with_scope::<Blob>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {:?}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::Blobs) => {
-                            engine.eval_with_scope::<Blobs>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {:?}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::String) => {
-                            engine.eval_with_scope::<String>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::Strings) => {
-                            engine.eval_with_scope::<Vec<String>>(&mut scope, &line)
-                                .map(|res| {
-                                    println!("res: {:?}", res);
-                                    ()
-                                })
-                        }
-                        Some(REPLReturnType::UnitResult) => {
-                            engine.eval_with_scope::<Result<(), String>>(&mut scope, &line)
-                                .map(|res| match res {
-                                    Err(e) => {
-                                        println!("Error: {}", e);
-                                    }
-                                    _ => {}
-                                })
-                        }
-                        Some(REPLReturnType::StringsResult) => {
-                            engine.eval_with_scope::<Result<Vec<String>, String>>(&mut scope, &line)
-                                .map(|res| match res {
-                                    Ok(strings) => {
-                                        println!("res: {:?}", strings);
-                                    }
-                                    Err(e) => {
-                                        println!("Error: {}", e);
-                                    }
-                                })
-                        }
-                        Some(REPLReturnType::BlobsResult) => {
-                            engine.eval_with_scope::<Result<Blobs, String>>(&mut scope, &line)
-                                .map(|res| match res {
-                                    Ok(blobs) => {
-                                        println!("res: {:?}", blobs);
-                                    }
-                                    Err(e) => {
-                                        println!("Error: {}", e);
-                                    }
-                                })
-                        }
-                        _ => {
-                            engine.consume_with_scope(&mut scope, &line)
-                        }
-                    };
-                    if let Err(e) = result
-                    {
-                        println!("Error: {}", e)
-                    }
-                }
-                Err(ReadlineError::Interrupted) => {
-                    break;
-                }
-                Err(ReadlineError::Eof) => {
-                    break;
-                }
-                Err(err) => {
-                    println!("Error: {:?}", err);
-                    break;
-                }
-            }
-        }
+impl fmt::Display for REPLDictionary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut funcs: Vec<String> = self
+            .0
+            .iter()
+            .map(|(&key, f)| {
+                let mut str = String::from(key);
+                str.push_str("\t: ");
+                str.push_str(f.description);
+                str.push_str("\t: ");
+                str.push_str(f.return_type.to_string().as_str());
+                str
+            })
+            .collect();
+        funcs.sort();
+        let full_str = funcs.join("\n");
+        write!(f, "{}", full_str)
     }
 }
 
 fn register_fn(name: &'static str, return_type: &REPLReturnType) {
-    let mut repl = REPL.lock().unwrap();
-    repl.add(name, return_type);
+    REPL.lock().unwrap().add(name, return_type);
+}
+
+macro_rules! register_function {
+    ($engine:expr, $func_name:expr, $func:expr, $return_type:expr) => {
+        $engine.register_fn($func_name, $func);
+        register_fn($func_name, &$return_type);
+    };
 }
 
 pub fn register_types(engine: &mut Engine) {
@@ -220,22 +163,15 @@ fn send(group_id: String, blob: Blob) -> Result<(), String> {
 // recv_from_to(group_id, from_index, to_index) -> Vec<Blob<Message>>
 
 fn recv(group_id: String) -> Result<Blobs, String> {
-    get_blobs(group_id.as_str(), None, None)
-        .map_err(|err| err.to_string())
+    get_blobs(group_id.as_str(), None, None).map_err(|err| err.to_string())
 }
 
-fn recv_from(
-    group_id: String,
-    from: i64,
-) -> Result<Blobs, String> {
+fn recv_from(group_id: String, from: i64) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), Some(from), None)
         .map_err(|err| err.to_string())
 }
 
-fn recv_to(
-    group_id: String,
-    to: i64,
-) -> Result<Blobs, String> {
+fn recv_to(group_id: String, to: i64) -> Result<Blobs, String> {
     get_blobs(group_id.as_str(), None, Some(to))
         .map_err(|err| err.to_string())
 }
@@ -250,19 +186,27 @@ fn recv_from_to(
 }
 
 pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
-    // TODO: write a macro which can take any type of function, just as engine.register_fn
-    engine.register_fn("blob", blob);
-    register_fn("blob", &REPLReturnType::Blob);
-    engine.register_fn("send", send);
-    register_fn("send", &REPLReturnType::UnitResult);
-    engine.register_fn("recv", recv);
-    register_fn("recv", &REPLReturnType::BlobsResult);
-    engine.register_fn("recv_from", recv_from);
-    register_fn("recv_from", &REPLReturnType::BlobsResult);
-    engine.register_fn("recv_to", recv_to);
-    register_fn("recv_to", &REPLReturnType::BlobsResult);
-    engine.register_fn("recv_from_to", recv_from_to);
-    register_fn("recv_from_to", &REPLReturnType::BlobsResult);
+    register_function!(engine, "blob", blob, REPLReturnType::Blob);
+    register_function!(engine, "send", send, REPLReturnType::UnitResult);
+    register_function!(engine, "recv", recv, REPLReturnType::BlobsResult);
+    register_function!(
+        engine,
+        "recv_from",
+        recv_from,
+        REPLReturnType::BlobsResult
+    );
+    register_function!(
+        engine,
+        "recv_to",
+        recv_to,
+        REPLReturnType::BlobsResult
+    );
+    register_function!(
+        engine,
+        "recv_from_to",
+        recv_from_to,
+        REPLReturnType::BlobsResult
+    );
 
     // Create a group with the user as a single member.
     //
@@ -272,8 +216,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             create_group(state.clone(), group_id)
         }
     };
-    engine.register_fn("create", create_closure(state.clone()));
-    register_fn("create", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "create",
+        create_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Add a user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
@@ -282,12 +230,20 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
     // add(group_id, user_name)
     let add_closure = |state: Arc<Mutex<State>>| {
         move |group_id: String, user_name: String| -> Result<(), String> {
-            add_to_group(state.clone(), group_id, user_name)
-                .map_err(|err| { println!("{}", err); err } )
+            add_to_group(state.clone(), group_id, user_name).map_err(
+                |err| {
+                    println!("{}", err);
+                    err
+                },
+            )
         }
     };
-    engine.register_fn("add", add_closure(state.clone()));
-    register_fn("add", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "add",
+        add_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Add the current user to a group and generate an invitation file for them.
     // Assumes that the user's data is stored in `<user>.pub` and
@@ -296,12 +252,18 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
     // add_self(group_id)
     let add_self_closure = |state: Arc<Mutex<State>>| {
         move |group_id: String| -> Result<(), String> {
-            add_self_to_group(state.clone(), group_id)
-                .map_err(|err| { println!("{}", err); err } )
+            add_self_to_group(state.clone(), group_id).map_err(|err| {
+                println!("{}", err);
+                err
+            })
         }
     };
-    engine.register_fn("add_self", add_self_closure(state.clone()));
-    register_fn("add_self", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "add_self",
+        add_self_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Join a group. The welcome file has to be present.
     //
@@ -311,8 +273,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             join_group(state.clone(), group_id)
         }
     };
-    engine.register_fn("join", join_closure(state.clone()));
-    register_fn("join", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "join",
+        join_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Do an update.
     //
@@ -323,8 +289,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             do_update(&mut state, group_id)
         }
     };
-    engine.register_fn("update", update_closure(state.clone()));
-    register_fn("update", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "update",
+        update_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Remove a user from the group. Assumes that the user's data is stored
     // in `<user>.pub` and `<user>.init`.
@@ -336,8 +306,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             remove_from_group(&mut state, group_id, user_name)
         }
     };
-    engine.register_fn("remove", remove_closure(state.clone()));
-    register_fn("remove", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "remove",
+        remove_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // See group's roster.
     //
@@ -359,8 +333,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             }
         }
     };
-    engine.register_fn("roster", roster_closure(state.clone()));
-    register_fn("roster", &REPLReturnType::StringsResult);
+    register_function!(
+        engine,
+        "roster",
+        roster_closure(state.clone()),
+        REPLReturnType::StringsResult
+    );
 
     // List groups.
     //
@@ -371,8 +349,12 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             Ok(state.groups.keys().cloned().collect())
         }
     };
-    engine.register_fn("list", list_closure(state.clone()));
-    register_fn("list", &REPLReturnType::StringsResult);
+    register_function!(
+        engine,
+        "list",
+        list_closure(state.clone()),
+        REPLReturnType::StringsResult
+    );
 
     // Load state from disk (from `<user>.state`).
     //
@@ -388,37 +370,75 @@ pub fn register_functions(state: Arc<Mutex<State>>, engine: &mut Engine) {
             Ok(())
         }
     };
-    engine.register_fn("load", load_closure(state.clone()));
-    register_fn("load", &REPLReturnType::UnitResult);
+    register_function!(
+        engine,
+        "load",
+        load_closure(state.clone()),
+        REPLReturnType::UnitResult
+    );
 
     // Quit the program.
     //
     // quit()
     // exit()
-    engine.register_fn("quit", || { exit(0); });
-    register_fn("quit", &REPLReturnType::Unit);
-    engine.register_fn("exit", || { exit(0); });
-    register_fn("exit", &REPLReturnType::Unit);
+    register_function!(
+        engine,
+        "quit",
+        || {
+            exit(0);
+        },
+        REPLReturnType::Unit
+    );
+    register_function!(
+        engine,
+        "exit",
+        || {
+            exit(0);
+        },
+        REPLReturnType::Unit
+    );
 
     // Start querying the server for data
-    engine.register_fn("start_poll", move || {
-        let mut poll = POLLING.lock().unwrap();
-        poll.start_polling(state.clone());
-    });
-    register_fn("start_poll", &REPLReturnType::Unit);
+    register_function!(
+        engine,
+        "start_poll",
+        move || {
+            let mut poll = POLLING.lock().unwrap();
+            poll.start_polling(state.clone());
+        },
+        REPLReturnType::Unit
+    );
 
     // Stop querying the server for data
-    engine.register_fn("stop_poll", || {
-        let mut poll = POLLING.lock().unwrap();
-        poll.stop_polling();
-    });
-    register_fn("stop_poll", &REPLReturnType::Unit);
+    register_function!(
+        engine,
+        "stop_poll",
+        || {
+            let mut poll = POLLING.lock().unwrap();
+            poll.stop_polling();
+        },
+        REPLReturnType::Unit
+    );
 
-    engine.register_fn("is_polling", || {
-        let poll = POLLING.lock().unwrap();
-        poll.is_polling()
-    });
-    register_fn("is_polling", &REPLReturnType::Boolean);
+    register_function!(
+        engine,
+        "is_polling",
+        || {
+            let poll = POLLING.lock().unwrap();
+            poll.is_polling()
+        },
+        REPLReturnType::Boolean
+    );
+
+    register_function!(
+        engine,
+        "list_commands",
+        || {
+            let repl = REPL.lock().unwrap();
+            repl.to_string()
+        },
+        REPLReturnType::String
+    );
 }
 
 fn add_self_to_group(
@@ -605,6 +625,107 @@ fn create_group(
                 crypto: group_crypto,
             });
             Ok(())
+        }
+    }
+}
+
+pub fn start(engine: &mut Engine) {
+    // Start the REPL
+    let mut scope = rhai::Scope::new();
+    let mut rl = Editor::<()>::new();
+    loop {
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(&line);
+                let command = REPL.lock().unwrap().get_starts_with(&line);
+                let result = match command {
+                    Some(REPLReturnType::Boolean) => engine
+                        .eval_with_scope::<bool>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {}", res);
+                            ()
+                        }),
+                    Some(REPLReturnType::Message) => engine
+                        .eval_with_scope::<Message>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {:?}", res);
+                            ()
+                        }),
+                    Some(REPLReturnType::Blob) => engine
+                        .eval_with_scope::<Blob>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {:?}", res);
+                            ()
+                        }),
+                    Some(REPLReturnType::Blobs) => engine
+                        .eval_with_scope::<Blobs>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {:?}", res);
+                            ()
+                        }),
+                    Some(REPLReturnType::String) => engine
+                        .eval_with_scope::<String>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {}", res.as_str());
+                            ()
+                        }),
+                    Some(REPLReturnType::Strings) => engine
+                        .eval_with_scope::<Vec<String>>(&mut scope, &line)
+                        .map(|res| {
+                            println!("res: {:?}", res);
+                            ()
+                        }),
+                    Some(REPLReturnType::UnitResult) => engine
+                        .eval_with_scope::<Result<(), String>>(
+                            &mut scope, &line,
+                        )
+                        .map(|res| match res {
+                            Err(e) => {
+                                println!("Error: {}", e);
+                            }
+                            _ => {}
+                        }),
+                    Some(REPLReturnType::StringsResult) => engine
+                        .eval_with_scope::<Result<Vec<String>, String>>(
+                            &mut scope, &line,
+                        )
+                        .map(|res| match res {
+                            Ok(strings) => {
+                                println!("res: {:?}", strings);
+                            }
+                            Err(e) => {
+                                println!("Error: {}", e);
+                            }
+                        }),
+                    Some(REPLReturnType::BlobsResult) => engine
+                        .eval_with_scope::<Result<Blobs, String>>(
+                            &mut scope, &line,
+                        )
+                        .map(|res| match res {
+                            Ok(blobs) => {
+                                println!("res: {:?}", blobs);
+                            }
+                            Err(e) => {
+                                println!("Error: {}", e);
+                            }
+                        }),
+                    _ => engine.consume_with_scope(&mut scope, &line),
+                };
+                if let Err(e) = result {
+                    println!("Error: {}", e)
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
         }
     }
 }

@@ -40,7 +40,7 @@ pub struct State {
         deserialize_with = "deserialize_codec"
     )]
     pub init_key_bundle: keys::UserInitKeyBundle,
-    pub groups: HashMap<String, GroupState>
+    pub groups: HashMap<String, GroupState>,
 }
 
 impl State {

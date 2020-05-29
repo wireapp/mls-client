@@ -8,15 +8,17 @@ use std::time::Duration;
 
 use crate::client::{get_blobs, Blob};
 use crate::state::{GroupState, State};
-use std::sync::mpsc::{Sender, channel, TryRecvError};
+use std::sync::mpsc::{channel, Sender, TryRecvError};
 
 pub struct Polling {
-    handle: Option<Sender<()>>
+    handle: Option<Sender<()>>,
 }
 
 impl Polling {
     pub fn new() -> Polling {
-        Polling { handle: Option::None }
+        Polling {
+            handle: Option::None,
+        }
     }
 
     pub fn start_polling(&mut self, state: Arc<Mutex<State>>) {
@@ -38,14 +40,12 @@ impl Polling {
 
     fn spawn(state: Arc<Mutex<State>>) -> Sender<()> {
         let (sender, receiver) = channel();
-        thread::spawn(move || {
-            loop {
-                match receiver.try_recv() {
-                    Err(TryRecvError::Disconnected) => break,
-                    _ => {
-                        Polling::poll(state.clone());
-                        thread::sleep(Duration::from_secs(1));
-                    }
+        thread::spawn(move || loop {
+            match receiver.try_recv() {
+                Err(TryRecvError::Disconnected) => break,
+                _ => {
+                    Polling::poll(state.clone());
+                    thread::sleep(Duration::from_secs(1));
                 }
             }
         });
@@ -60,7 +60,8 @@ impl Polling {
         // Download blobs
         for (group_id, group_state) in state.groups.iter_mut() {
             let blobs =
-                get_blobs(group_id, Some(group_state.next_blob), None).unwrap();
+                get_blobs(group_id, Some(group_state.next_blob), None)
+                    .unwrap();
             for blob in blobs.blobs {
                 process_message(&group_id, group_state, blob)
             }
@@ -91,5 +92,3 @@ pub fn process_message(
         _ => {}
     }
 }
-
-

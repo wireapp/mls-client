@@ -17,22 +17,25 @@ pub struct Blob {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Blobs {
-    pub blobs: Vec<Blob>
+    pub blobs: Vec<Blob>,
 }
 
 /// Store a blob for a specific group.
-pub fn append_blob(
-    group_id: &str,
-    blob: &Blob,
-) -> reqwest::Result<()> {
+pub fn append_blob(group_id: &str, blob: &Blob) -> reqwest::Result<()> {
     let json = json!({
         "index": blob.index,
         "content": serde_json::to_string(&blob.content).unwrap()
     });
 
-    println!("append_blob: {}/groups/{}/blobs, blob: {:?}", SETTINGS.server, group_id, json);
+    println!(
+        "append_blob: {}/groups/{}/blobs, blob: {:?}",
+        SETTINGS.server, group_id, json
+    );
     CLIENT
-        .post(format!("{}/groups/{}/blobs", SETTINGS.server, group_id).as_str())
+        .post(
+            format!("{}/groups/{}/blobs", SETTINGS.server, group_id)
+                .as_str(),
+        )
         .json(&json)
         .send()?
         .error_for_status()

@@ -23,15 +23,16 @@ use std::sync::{Arc, Mutex};
 use settings::Settings;
 use state::State;
 
-use lazy_static::lazy_static;
 use crate::polling::Polling;
 use crate::repl::REPLDictionary;
+use lazy_static::lazy_static;
 
 lazy_static! {
     pub static ref SETTINGS: Settings = Settings::new().unwrap();
     pub static ref CLIENT: reqwest::Client = reqwest::Client::new();
-    pub static ref POLLING: Arc<Mutex<Polling>> =  Arc::new(Mutex::new(Polling::new()));
-    pub static ref REPL: Arc<Mutex<repl::REPLDictionary>> = Arc::new(Mutex::new(REPLDictionary::new()));
+    pub static ref POLLING: Mutex<Polling> = Mutex::new(Polling::new());
+    pub static ref REPL: Mutex<REPLDictionary> =
+        Mutex::new(REPLDictionary::new());
 }
 
 fn main() {
@@ -67,7 +68,5 @@ fn main() {
     repl::register_functions(state, &mut engine);
 
     // Start the REPL
-    REPL.lock().unwrap().start(&mut engine);
+    repl::start(&mut engine);
 }
-
-
